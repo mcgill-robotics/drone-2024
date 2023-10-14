@@ -1,0 +1,13 @@
+services:
+  drone:
+    volumes:
+      - ../drone_2024:/drone_2024
+    image: "ros:iron"
+    command: bash -c "tail -f /dev/null"
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
