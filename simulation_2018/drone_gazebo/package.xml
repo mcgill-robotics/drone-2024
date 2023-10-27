@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>drone_gazebo</name>
+  <version>0.1.0</version>
+  <description>The drone gazebo simulation package.</description>
+
+  <maintainer email="dev@anassinator.com">Anass Al</maintainer>
+
+  <license>GPLv2</license>
+
+  <author email="malcolm.watt@mail.mcgill.ca">Malcolm Watt</author>
+  <author email="yasasa.abeysirigoonawardena@mail.mcgill.ca">
+    Yasasa Abeysirigoonawardena
+  </author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>rospy</depend>
+  <depend>roscpp</depend>
+  <depend>std_msgs</depend>
+  <depend>message_generation</depend>
+  <depend>gazebo</depend>
+  <depend>gazebo_msgs</depend>
+  <depend>interop</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2</depend>
+  <depend>drone_base</depend>
+  <depend>storm32_gimbal</depend>
+  <depend>tf2_ros</depend>
+
+  <exec_depend>python-numpy-stl-pip</exec_depend>
+  <exec_depend>message_runtime</exec_depend>
+
+  <export> </export>
+</package>

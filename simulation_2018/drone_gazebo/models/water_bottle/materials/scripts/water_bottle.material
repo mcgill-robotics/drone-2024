@@ -1,0 +1,12 @@
+material water_bottle
+{
+    technique
+    {
+        pass
+        {
+            ambient 0.941 0.972 1.000 1.000
+            diffuse 0.941 0.972 1.000 1.000
+            specular 2 2 2 1.0 12.5
+        }
+    }
+}
