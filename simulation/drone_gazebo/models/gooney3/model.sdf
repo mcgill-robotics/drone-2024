@@ -1,0 +1,16 @@
+<?xml version='1.0'?>
+<sdf version='1.6'>
+  <model name='gooney3'>
+    <include>
+      <uri>model://plane</uri>
+    </include>
+
+    <include>
+      <uri>model://gopro_camera</uri>
+    </include>
+    <joint name="camera_joint" type="fixed">
+      <parent>plane::base_link</parent>
+      <child>gopro_camera::link</child>
+    </joint>
+  </model>
+</sdf>
