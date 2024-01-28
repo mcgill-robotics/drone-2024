@@ -1,61 +1,87 @@
-<?xml version="1.0"?>
-<sdf version='1.7'>
-    <model name='camera'>
+<?xml version="1.0" ?>
+<sdf version="1.5">
 
-        <joint name="camera_joint" type="fixed">
-            <parent link="base"/> #change to whatever parent link is
-            <child link="camera_link"/>
-            <origin xyz="0.305 0 0.08" rpy="0 0 0"/> #change to position of camera on drone
-        </joint>
+  <model name="rpi_cam">
 
-        <link name="camera_link">
-            <visual>
-                <geometry>
-                    <box size="0.010 0.03 0.03"/> #change to size of actual camera
-                </geometry>
-                <material name="red"/>
-            </visual>
-            <collision>
-                <geometry>
-                    <box size="0.010 0.03 0.03"/> #adjust for actual camera
-                </geometry>
-            </collision>
-            <xacro:inertial_cylinder mass="0.1" length="0.04" radius="0.05"> #adjust for actual camera
-                <origin xyz="0 0 0" rpy="0 0 0"/>
-            </xacro:inertial_cylinder>
-        </link>
+    <link name="link">
 
-        <joint name="camera_optical_joint" type="fixed">
-            <parent link="camera_link"/> #change to whatever parent link is
-            <child link="camera_link_optical"/>
-            <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/> #change to position of camera on drone
-        </joint>
+      <pose>0 0 0 -1.5707963259 1.5707963259 0</pose>
 
-        <link name="camera_link_optical">    </link>
+      <inertial>
+        <mass>0.07</mass>
+        <inertia>
+          <ixx>4.166666666666667e-06</ixx>
+          <iyy>5.208333333333334e-07</iyy>
+          <izz>3.854166666666666e-06</izz>
+        </inertia>
+      </inertial>
 
-        <gazebo reference="camera_link">
-            <material>Gazebo/Red</material>
+      <visual name="visual">
+        <geometry>
+          <box>
+            <size>0.038 0.038 0.02</size>
+          </box>
+        </geometry>
+      </visual>
 
-            <sensor name="camera" type="camera">
-                <pose> 0 0 0 0 0 0 </pose>
-                <visualize>true</visualize> #change based on if want to see or not
-                <update_rate>10</update_rate>
-                <camera>
-                    <horizontal_fov>1.089</horizontal_fov> #value is in radians
-                    <image>
-                        <format>R8G8B8</format>
-                        <width>640</width> #pixel size
-                        <height>480</height> #pixel size
-                    </image>
-                    <clip>
-                        <near>0.05</near> #min distance camera can see in meters
-                        <far>8.0</far> #maximum distance camera can see in meters
-                    </clip>
-                </camera>
-                <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
-                    <frame_name>camera_link_optical</frame_name>
-                </plugin>
-            </sensor>
-        </gazebo>
-    </model>
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>0.005 0.04 0.02</size> 
+          </box>
+        </geometry>
+      </collision>
+
+      <sensor name="rpi_cam" type="camera">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>true</visualize>
+        <topic>/arucoMarker</topic>
+        <camera>
+          <horizontal_fov>1.308997</horizontal_fov> <!-- 75 deg -->
+          <lens>
+            <intrinsics>
+              <fx>398.77559882561974</fx>
+              <fy>396.51789974056226</fy>
+              <cx>325.46639260681752</cx>
+              <cy>239.06162259594086</cy>
+              <s>0</s>
+            </intrinsics>
+            <scale_to_hfov>false</scale_to_hfov>
+          </lens>
+          <distortion>
+            <k1>-0.074500551440667862</k1>
+            <k2>-0.15464660896318899</k2>
+            <k3>-0.00047134015104217627</k3>
+            <p1>0.0036767321906851489</p1>
+            <p2>0.28738933210835571</p2>
+            <center>0.5 0.5</center>
+          </distortion>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>L8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>100</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.001</stddev>
+          </noise>
+        </camera>
+
+        <plugin name="rpi_marker_plugin" filename="libgazebo_rpi_plugin.so">
+            <robotNamespace></robotNamespace>
+            <landPadName>land_pad</landPadName>
+        </plugin>
+        
+      </sensor>
+    </link>
+  </model>
+
 </sdf>
+
+<!-- vim: set et ft=xml fenc=utf-8 ff=unix sts=0 sw=2 ts=2 : -->
