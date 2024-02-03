@@ -1,5 +1,5 @@
 # drone_2024
-
+Use  `git clone --recursive <https-link>` to clone this repo.
 # Packages structure
 Please test abundantly, for each node write an equivalently named
 test python script which tests the functionallity of that node and the 
