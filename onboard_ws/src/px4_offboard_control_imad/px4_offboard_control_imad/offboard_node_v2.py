@@ -133,3 +133,16 @@ class OffboardControl(Node):
 
     def vehicle_command_ack_callback(self, msg : VehicleCommandAck):
         self.vehicle_command_ack = msg
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    offboard_control = OffboardControl()
+    rclpy.spin(offboard_control)
+
+    offboard_control.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
