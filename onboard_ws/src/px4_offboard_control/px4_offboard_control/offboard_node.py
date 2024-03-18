@@ -18,10 +18,11 @@ from px4_msgs.msg import VehicleCommandAck
 
 ## Out
 from px4_msgs.msg import OffboardControlMode
-from px4_msgs.msg import TrajectorySetpoint
+from px4_msgs.msg import GotoSetpoint
 from px4_msgs.msg import VehicleCommand
 
-# PX4 Services
+# Other PX4
+from px4_msgs.msg import VtolVehicleStatus
 
 # Other types
 from custom_msgs.msg import VehicleInfo
@@ -91,6 +92,16 @@ class OffboardControl(Node):
         QUAD_COPTER_CONFIGURATION = 1
         FIXED_WING_CONFIGURATION = 2
 
+        def other(self)->"OffboardControl.FlightConfiguration":
+            return OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION if \
+                self == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION else \
+                      OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION
+
+        def get_vtol_status(self):
+            if (self == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
+                return VtolVehicleStatus.VEHICLE_VTOL_STATE_MC
+            return VtolVehicleStatus.VEHICLE_VTOL_STATE_FW
+        
     class TransitionQC(Action):
         def __init__(self):
             super().__init__("Transition to Quad Copter")
@@ -148,8 +159,8 @@ class OffboardControl(Node):
         self.offboard_mode_pub = self.create_publisher(
             OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
 
-        self.trajectory_setpoint_pub = self.create_publisher(
-            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile
+        self.goto_setpoint_pub = self.create_publisher(
+            GotoSetpoint, '/fmu/in/goto_setpoint', qos_profile
         )
 
         self.vehicle_command_pub = self.create_publisher(
@@ -251,9 +262,9 @@ class OffboardControl(Node):
         # set wapoint to be up high
         target_height = -5.
         
-        trajectorySetpoint = TrajectorySetpoint()
+        trajectorySetpoint = GotoSetpoint()
         trajectorySetpoint.position = [0.0, 0.0, target_height]
-        self.trajectory_setpoint_pub.publish(trajectorySetpoint)
+        self.goto_setpoint_pub.publish(trajectorySetpoint)
 
         if (abs(self.vehicle_local_position.z - target_height) <= 0.1): 
             self.action_queue.popleft()
@@ -265,9 +276,9 @@ class OffboardControl(Node):
             return 5.
 
     def waypoint(self, x, y, z):
-        trajectorySetpoint = TrajectorySetpoint()
+        trajectorySetpoint = GotoSetpoint()
         trajectorySetpoint.position = [x, y, z]
-        self.trajectory_setpoint_pub.publish(trajectorySetpoint)
+        self.goto_setpoint_pub.publish(trajectorySetpoint)
         if (((self.vehicle_local_position.x - x) ** (2) +
              (self.vehicle_local_position.y - y) ** (2) +
              (self.vehicle_local_position.z - z) ** (2)) ** (1/2) <= self.current_tolerance()):
@@ -282,7 +293,11 @@ class OffboardControl(Node):
             self.action_queue.popleft()
             return
         self.current_flight_configuration = mode
-        self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION)
+        self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION, float(mode.get_vtol_status()))
+        ## if fw, max throttle
+        if (mode == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
+            throtle_percentage = 0.99
+            self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_CHANGE_SPEED, 1., -1., throtle_percentage)
         self.action_queue.popleft()
 
     def vehicle_status_callback(self, msg : VehicleStatus):
