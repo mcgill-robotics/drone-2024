@@ -14,13 +14,14 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDur
 from px4_msgs.msg import VehicleLocalPosition
 from px4_msgs.msg import VehicleStatus
 from px4_msgs.msg import BatteryStatus
+from px4_msgs.msg import VehicleCommandAck
 
 ## Out
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import TrajectorySetpoint
+from px4_msgs.msg import VehicleCommand
 
 # PX4 Services
-from px4_msgs.srv import VehicleCommand as VehicleCommandSrv
 
 # Other types
 from custom_msgs.msg import VehicleInfo
@@ -136,18 +137,24 @@ class OffboardControl(Node):
         )
         self.vehicle_battery_status : BatteryStatus | None = None
 
+        self.vehicle_command_ack_sub = self.create_subscription(
+            VehicleCommandAck, '/fmu/out/vehicle_command_ack',
+              self.vehicle_command_ack_callback,
+              qos_profile
+        )
+        self.vehicle_command_ack : VehicleCommandAck | None = None
 
         ## PX4 PUBS
         self.offboard_mode_pub = self.create_publisher(
             OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
 
-
         self.trajectory_setpoint_pub = self.create_publisher(
             TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile
         )
 
-        ## PX4 Services
-        self.vehicle_command_service = self.create_service
+        self.vehicle_command_pub = self.create_publisher(
+            VehicleCommand, '/fmu/in/vehicle_command', qos_profile
+        )
 
         # custom pubs / subs
         self.vehicle_info_pub = self.create_publisher(
@@ -221,7 +228,6 @@ class OffboardControl(Node):
     def send_vehicle_command(self, cmd, param1=None, param2=None, param3=None, 
                              param4=None, param5=None, param6=None, param7=None):
         vehicle_command = VehicleCommand()
-
         vehicle_command.command = cmd  # command ID
 
         for i in range(1, 8):
@@ -237,7 +243,7 @@ class OffboardControl(Node):
         vehicle_command.timestamp = int(Clock().now().nanoseconds / 1000) # time in microseconds
 
         self.vehicle_command_pub.publish(vehicle_command)
-    
+        
     def takeoff(self):
         # Arm 
         self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1., 6.)
@@ -288,6 +294,8 @@ class OffboardControl(Node):
     def vehicle_battery_status_callback(self, msg : BatteryStatus):
         self.vehicle_battery_status = msg
 
+    def vehicle_command_ack_callback(self, msg : VehicleCommandAck):
+        self.vehicle_command_ack = msg
     
     def enqueue_action_callback(self, req, res):
         action = OffboardControl.Action.construct_action(req.action, req.x, req.y, req.z)

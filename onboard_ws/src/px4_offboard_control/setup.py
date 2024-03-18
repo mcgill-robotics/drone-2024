@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'offboard_node = px4_offboard_control_imad.offboard_node:main',
+            'offboard_node = px4_offboard_control.offboard_node:main',
         ],
     },
 )
