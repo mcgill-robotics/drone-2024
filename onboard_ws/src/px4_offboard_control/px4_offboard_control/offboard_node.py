@@ -260,9 +260,9 @@ class OffboardControl(Node):
         
     def current_tolerance(self):
         if (self.current_flight_configuration == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-            return 0.1
-        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
             return 1.
+        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
+            return 5.
 
     def waypoint(self, x, y, z):
         trajectorySetpoint = TrajectorySetpoint()
