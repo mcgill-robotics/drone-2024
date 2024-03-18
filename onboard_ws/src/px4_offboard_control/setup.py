@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'px4_offboard_control_imad'
+package_name = 'px4_offboard_control'
 
 setup(
     name=package_name,
@@ -21,7 +21,6 @@ setup(
     entry_points={
         'console_scripts': [
             'offboard_node = px4_offboard_control_imad.offboard_node:main',
-            'offboard_node_v2 = px4_offboard_control_imad.offboard_node_v2:main',
         ],
     },
 )
