@@ -17,6 +17,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/VehicleInfo.msg"
+  "msg/Action.msg"
   "srv/SendInt.srv"
   "srv/SendAction.srv"
   "srv/RequestAction.srv"

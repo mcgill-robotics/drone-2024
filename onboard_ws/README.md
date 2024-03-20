@@ -14,3 +14,7 @@ In an another terminal, navigate to the PX4 folder and run ```make px4_sitl gaze
 In yet another terminal, navigate to your onboard_ws folder, and run ```source ./install/setup.bash```. Then run ```ros2 run px4_offboard_control offboard_node```
 ### Extra step
 You can now interact with the offboard node's action queue through the services it exposes. Example : ```ros2 service call /px4_action_queue/append_action custom_msgs/srv/SendAction "{action: 1, x: 0., y: 0., z: 0.}"``` will enqueue a take off into the action queue.
+### Required packages
+mavsdk
+
+OpenCV
