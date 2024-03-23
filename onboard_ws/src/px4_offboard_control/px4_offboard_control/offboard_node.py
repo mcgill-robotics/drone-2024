@@ -211,6 +211,7 @@ class OffboardControl(Node):
         timer_period_actions = 0.2
         self.timer_action = self.create_timer(timer_period_actions, self.action_executor)
         self.current_flight_configuration = OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION
+        self._transition_toggle = True
 
     def offboard_mode_publish(self):
         offboard_msg = OffboardControlMode()
@@ -352,18 +353,20 @@ class OffboardControl(Node):
             self.action_queue.popleft()
 
     def transition(self, mode : FlightConfiguration):
+        """
+            Transition action, completes when the current flight mode is the same as the desired flight mode
+        """
         if (mode == self.current_flight_configuration):
             self.action_queue.popleft()
             return
-        self.current_flight_configuration = mode
+        
         self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION, float(mode.get_vtol_status()))
-        ## if fw, max throttle
+        
         if (mode == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
-            throtle_percentage = 0.99
+            throtle_percentage = 0.80
             self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_CHANGE_SPEED, 1., -1., throtle_percentage)
-        if (self.vehicle_command_ack.command == VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION and 
-            self.vehicle_command_ack.result == VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED):
-            self.action_queue.popleft()
+
+        self.current_flight_configuration = mode
 
     def vehicle_status_callback(self, msg : VehicleStatus):
         self.vehicle_status = msg
@@ -396,6 +399,7 @@ class OffboardControl(Node):
 
 
 def main(args=None):
+
     rclpy.init(args=args)
     loop = asyncio.get_event_loop()
     offboard_control = OffboardControl(loop)
