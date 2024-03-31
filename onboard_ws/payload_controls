@@ -1,0 +1,77 @@
+#include <Servo.h>
+
+int motor1pin1 = 2;
+int motor1pin2 = 3;
+
+int motor2pin1 = 4;
+int   motor2pin2 = 5;
+int drop_speed = 180; // Modify this to change drop speed. NOTE: THE MAXIMUM ALLOWED BY ARDUINO IS 255, BUT THIS WILL LIKELY BE ABOVE THE MAX VOLTAGE OF THE MOTOR. CHECK OUTPUT VOLTAGE BEFORE GIVING IT TO THE MOTOR
+int drop_time = 3000 // Modify this to change the length of the drop
+
+Servo myservo;
+
+
+void setup() {
+
+
+  pinMode(motor1pin1, OUTPUT);
+  pinMode(motor1pin2, OUTPUT);
+
+
+  delay(1000);
+
+  myservo.write(90);
+  myservo.attach(9, 600,600);  // (pin, min, max)
+
+
+  delay(5000);
+
+  pinMode(11,   OUTPUT); 
+
+ // Turn on motor in the CCW direction to remove load from locking pin
+
+  analogWrite(6, 120); //ENA   pin
+  digitalWrite(motor1pin1,   LOW);
+  digitalWrite(motor1pin2, HIGH);
+  delay(3000);
+
+
+  myservo.write(20); // Retract pin
+
+  delay(1000);
+//
+
+//
+  pinMode(6,   OUTPUT); 
+
+   analogWrite(6, 0);
+//  digitalWrite(motor1pin1,   LOW);
+//  digitalWrite(motor1pin2, HIGH);
+ // increase drop speed
+
+ 
+// Turn on motor in the CW direction to lower bottle
+
+  analogWrite(6, drop_speed); //ENA   pin
+  digitalWrite(motor1pin1,   HIGH);
+  digitalWrite(motor1pin2, LOW);
+
+  delay(drop_time); 
+
+
+
+analogWrite(6, 0); // turn off motor
+
+  delay(1000);
+
+
+
+
+
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+
+}
