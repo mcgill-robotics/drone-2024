@@ -8,9 +8,5 @@ float64 vz
 
 uint32 mode
 
-uint32 QUAD_COPTER_MODE = 1
-uint32 FIXED_WING_MODE = 2
-
-
 float64 powerlevel
 string current_action

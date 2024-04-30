@@ -27,25 +27,14 @@ from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import GotoSetpoint
 from px4_msgs.msg import VehicleCommand
 
-# Other PX4
-from px4_msgs.msg import VtolVehicleStatus
-
 # Other imports 
 import collections
 from typing import Deque
 from enum import Enum
-from mavsdk import System
-from mavsdk.offboard import PositionNedYaw
-import asyncio
 import os 
 
 class OffboardControl(Node):
     class Action:
-        TAKE_OFF_ID = 1
-        WAYPOINT_ID = 2
-        LANDING_ID = 3
-        TRANSITION_QC_ID = 4
-        TRANSITION_FW_ID = 5
     
         def __init__(self, des : str, action_type : int) -> None:
             self.description = des
@@ -56,22 +45,18 @@ class OffboardControl(Node):
         
         @staticmethod
         def construct_action(action_type, x = None, y = None, z = None) -> "OffboardControl.Action":
-            if (action_type == OffboardControl.Action.TAKE_OFF_ID):
+            if (action_type == Action.ACTION_TAKE_OFF):
                 return OffboardControl.TakeOff()
-            elif (action_type == OffboardControl.Action.WAYPOINT_ID):
+            elif (action_type == Action.ACTION_WAYPOINT):
                 return OffboardControl.Waypoint(x, y, z)
-            elif (action_type == OffboardControl.Action.LANDING_ID):
+            elif (action_type == Action.ACTION_LAND):
                 return OffboardControl.Landing()
-            elif (action_type == OffboardControl.Action.TRANSITION_QC_ID):
-                return OffboardControl.TransitionQC()
-            elif (action_type == OffboardControl.Action.TRANSITION_FW_ID):
-                return OffboardControl.TransitionFW()
             else:
                 print(f"[WARNING] {action_type} is not a valid action type id") 
     
     class TakeOff(Action):
         def __init__(self):
-            super().__init__("Take off", OffboardControl.Action.TAKE_OFF_ID)
+            super().__init__("Take off", Action.ACTION_TAKE_OFF)
             self.setup_done = False
         
         def perform(self, offboard_object : "OffboardControl"):
@@ -79,7 +64,7 @@ class OffboardControl(Node):
             
     class Waypoint(Action):
         def __init__(self, x, y, z) -> None:
-            super().__init__(f"Waypoint to ({x}, {y}, {z})", OffboardControl.Action.WAYPOINT_ID)
+            super().__init__(f"Waypoint to ({x}, {y}, {z})", Action.ACTION_WAYPOINT)
             self.x = x
             self.y = y
             self.z = z
@@ -89,49 +74,12 @@ class OffboardControl(Node):
 
     class Landing(Action):
         def __init__(self):
-            super().__init__("Landing", OffboardControl.Action.LANDING_ID)
+            super().__init__("Landing", Action.ACTION_LAND)
 
         def perform(self, offboard_object : "OffboardControl"):
             offboard_object.land()
 
-    class FlightConfiguration(Enum):
-        QUAD_COPTER_CONFIGURATION = 1
-        FIXED_WING_CONFIGURATION = 2
-
-        def other(self)->"OffboardControl.FlightConfiguration":
-            return OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION if \
-                self == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION else \
-                      OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION
-
-        def get_vtol_status(self):
-            if (self == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-                return VtolVehicleStatus.VEHICLE_VTOL_STATE_MC
-            return VtolVehicleStatus.VEHICLE_VTOL_STATE_FW
-        
-        def get_tolerance(self):
-            if (self == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-                return 3.
-            if (self == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
-                return 7.
-            
-    class TransitionQC(Action):
-        def __init__(self):
-            super().__init__("Transition to Quad Copter", OffboardControl.Action.TRANSITION_QC_ID)
-
-        def perform(self, offboard_object : "OffboardControl"):
-            offboard_object.transition(OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION)
-
-    class TransitionFW(Action):
-        def __init__(self):
-            super().__init__("Transition to Fixed wing", OffboardControl.Action.TRANSITION_FW_ID)
-
-        def perform(self, offboard_object : "OffboardControl"):
-            offboard_object.transition(OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION)
-
-    def exec_until_completion(self, coroutine):
-        return self.loop.run_until_complete(coroutine)
-
-    def __init__(self, loop):
+    def __init__(self):
         super().__init__('px4_controller')
 
         qos_profile = QoSProfile(
@@ -140,12 +88,6 @@ class OffboardControl(Node):
             history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
             depth=1
         )
-
-        # Used to synchify async activities in mavsdk
-        self.loop = loop 
-        ## MAV SDK
-        self.drone = System()
-        self.exec_until_completion(self.drone.connect())
 
         # PX4 pubs / subs
         ## PX4 SUBS
@@ -210,8 +152,6 @@ class OffboardControl(Node):
 
         timer_period_actions = 0.2
         self.timer_action = self.create_timer(timer_period_actions, self.action_executor)
-        self.current_flight_configuration = OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION
-        self._transition_toggle = True
 
     def offboard_mode_publish(self):
         offboard_msg = OffboardControlMode()
@@ -286,15 +226,7 @@ class OffboardControl(Node):
         self.vehicle_command_pub.publish(vehicle_command)
 
     def action_executor(self):
-        if (len(self.action_queue) == 0): 
-            self.exec_until_completion(self.drone.offboard.stop())
-        else:
-            if (not self.exec_until_completion(self.drone.offboard.is_active())):
-                self.exec_until_completion(self.drone.offboard.set_position_ned(PositionNedYaw(-self.vehicle_local_position.x,
-                                                                                                   -self.vehicle_local_position.y,
-                                                                                                   -self.vehicle_local_position.z,
-                                                                                                   -self.vehicle_local_position.heading)))
-                self.exec_until_completion(self.drone.offboard.start())
+        if (len(self.action_queue) > 0): 
             self.action_queue[0].perform(self)
 
     def takeoff(self, action_ob:TakeOff):
@@ -320,26 +252,21 @@ class OffboardControl(Node):
         
     def current_tolerance(self):
         """
-            defines the distance tolerances for Quad Copter and fixed wing configuartion
+            defines the distance tolerances for Quad Copter configuartion
         """
-        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-            return 3.
-        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
-            return 7.
+        return 3.
+
 
     def waypoint(self, x, y, z, yaw = 0.0):
         """
             Waypoint action, only completes when within current_tolarance from the target waypoint
         """
-        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-            trajectorySetpoint = GotoSetpoint()
-            trajectorySetpoint.position = [x, y, z]
-            self.goto_setpoint_pub.publish(trajectorySetpoint)
-        else:
-            self.exec_until_completion(self.drone.offboard.set_position_ned(PositionNedYaw(x, y, z, yaw)))
+        trajectorySetpoint = GotoSetpoint()
+        trajectorySetpoint.position = [x, y, z]
+        self.goto_setpoint_pub.publish(trajectorySetpoint)
         if (((self.vehicle_local_position.x - x) ** (2) +
              (self.vehicle_local_position.y - y) ** (2) +
-             (self.vehicle_local_position.z - z) ** (2)) ** (1/2) <= self.current_flight_configuration.get_tolerance()):
+             (self.vehicle_local_position.z - z) ** (2)) ** (1/2) <= self.current_tolerance()):
             self.action_queue.popleft()
 
     def land(self):
@@ -351,22 +278,6 @@ class OffboardControl(Node):
             self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
         if (self.vehicle_status.arming_state == VehicleStatus.ARMING_STATE_DISARMED):
             self.action_queue.popleft()
-
-    def transition(self, mode : FlightConfiguration):
-        """
-            Transition action, completes when the current flight mode is the same as the desired flight mode
-        """
-        if (mode == self.current_flight_configuration):
-            self.action_queue.popleft()
-            return
-        
-        self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION, float(mode.get_vtol_status()))
-        
-        if (mode == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
-            throtle_percentage = 0.80
-            self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_CHANGE_SPEED, 1., -1., throtle_percentage)
-
-        self.current_flight_configuration = mode
 
     def vehicle_status_callback(self, msg : VehicleStatus):
         self.vehicle_status = msg
@@ -401,11 +312,9 @@ class OffboardControl(Node):
 def main(args=None):
 
     rclpy.init(args=args)
-    loop = asyncio.get_event_loop()
-    offboard_control = OffboardControl(loop)
+    offboard_control = OffboardControl()
     rclpy.spin(offboard_control)
 
-    loop.close()
     offboard_control.destroy_node()
     rclpy.shutdown()
 
