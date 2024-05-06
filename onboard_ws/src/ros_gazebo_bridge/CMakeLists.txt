@@ -15,10 +15,13 @@ find_package(rclcpp REQUIRED)
 find_package(gz-transport12 REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(px4_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2 REQUIRED)
 # find_package(<dependency> REQUIRED)
 
 add_executable(lidar_bridge src/lidar_bridge.cpp)
-ament_target_dependencies(lidar_bridge rclcpp gz-transport12 px4_msgs sensor_msgs)
+ament_target_dependencies(lidar_bridge rclcpp gz-transport12 px4_msgs sensor_msgs tf2_ros tf2 geometry_msgs)
 
 target_include_directories(lidar_bridge PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
