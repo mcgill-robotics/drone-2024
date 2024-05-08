@@ -16,3 +16,6 @@ if you're on ubuntu 22.04 LTS (as you should be for the MicroXRCE agent to work 
 Copy the content of the file under `iris_lidar/model.sdf` to the file under 
 `<Your PX4 Folder>/Tools/simulation/gz/models/x500/model.sdf`
 , `cd <Your PX4 Folder> && make px4_sitl gz_x500`.
+
+Also, copy the content of the file under `world/default.sdf` to the file under
+`<Your PX4 Folder>/Tools/simulation/gz/worlds/default.sdf`
