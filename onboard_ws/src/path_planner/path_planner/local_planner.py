@@ -46,6 +46,7 @@ class VfhPlanner(Node):
 
         self.targe_subscriber = self.create_subscription(
             Waypoint, "/target_position", self.waypoint_callback, qos_profile)
+        self.goal_waypoint = LocalCoordinates()
         self.target_waypoint = LocalCoordinates()
 
         self.vehicle_info_subscriber = self.create_subscription(
@@ -65,34 +66,41 @@ class VfhPlanner(Node):
             self.get_logger().info('service not available, waiting again...')
 
         timer_period = 0.5
-        self.timer = self.create_timer(timer_period, self.planner_tick)
+        self.timer_1 = self.create_timer(timer_period, self.controller_tick)
+        self.timer_2 = self.create_timer(timer_period / 2, self.planner_tick)
 
     def send_action(self, action: Action):
         self.action_req.action = action
-        self.future = self.enqueue_action_client.call_async(self.action_req)
-        rclpy.spin_until_future_complete(self, self.future)
-        return self.future.result()
+        return self.enqueue_action_client.call_async(self.action_req)
 
     def planner_tick(self):
+        self.target_waypoint = self.goal_waypoint
+
+    def controller_tick(self):
         self.get_logger().info(
-            f"Current Target: ({self.target_waypoint.x}, {self.target_waypoint.y}, {self.target_waypoint.z})\n"
+            f"Current Target: ({self.goal_waypoint.x}, {self.goal_waypoint.y}, {self.goal_waypoint.z})\n"
         )
-        if (self.target_waypoint == LocalCoordinates(0, 0, 0)
+        if (self.goal_waypoint == LocalCoordinates(0, 0, 0)
                 and self.vehicle_info.arming_state
-                == VehicleInfo.ARMING_STATE_ARMED):
+                == VehicleInfo.ARMING_STATE_ARMED
+                and self.vehicle_info.curr_action_obj.action
+                != Action.ACTION_LAND):
             action = Action()
             action.action = Action.ACTION_LAND
             self.send_action(action)
             return
-        elif (self.target_waypoint != LocalCoordinates(0, 0, 0)
+        elif (self.goal_waypoint != LocalCoordinates(0, 0, 0)
               and self.vehicle_info.arming_state
-              == VehicleInfo.ARMING_STATE_DISARMED):
+              == VehicleInfo.ARMING_STATE_DISARMED
+              and self.vehicle_info.curr_action_obj.action
+              != Action.ACTION_TAKE_OFF):
             action = Action()
             action.action = Action.ACTION_TAKE_OFF
             self.send_action(action)
-        elif (self.target_waypoint != LocalCoordinates(0, 0, 0)
-              and self.vehicle_info.arming_state
-              == VehicleInfo.ARMING_STATE_ARMED):
+        elif (self.target_waypoint != LocalCoordinates(0, 0, 0) and
+              self.vehicle_info.arming_state == VehicleInfo.ARMING_STATE_ARMED
+              and self.vehicle_info.curr_action_obj.action
+              == Action.ACTION_NONE):
             ## This should be the part of the code that does obstacle avoidance and publishes action
             action = Action()
             action.action = Action.ACTION_WAYPOINT
@@ -100,10 +108,9 @@ class VfhPlanner(Node):
             action.y = self.target_waypoint.y
             action.z = self.target_waypoint.z
             self.send_action(action)
-            pass
 
     def waypoint_callback(self, msg: Waypoint):
-        self.target_waypoint.set_xyz(msg)
+        self.goal_waypoint.set_xyz(msg)
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.vehicle_info = msg

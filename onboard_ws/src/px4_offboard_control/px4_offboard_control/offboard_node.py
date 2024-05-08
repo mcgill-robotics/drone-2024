@@ -306,7 +306,8 @@ class OffboardControl(Node):
         """
             Landing Action, only completes when drone is disarmed
         """
-        if (self.vehicle_command_ack.command
+        if (self.vehicle_command_ack is None
+                or self.vehicle_command_ack.command
                 != VehicleCommand.VEHICLE_CMD_NAV_LAND
                 or self.vehicle_command_ack.result
                 != VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED):
