@@ -23,11 +23,11 @@ then
 
         tmux send-keys -t "$SESSION:$window" -t 1 'MicroXRCEAgent udp4 -p 8888' enter
 
-        tmux send-keys -t "$SESSION:$window" -t 2 'source install/setup.bash' enter
+        tmux send-keys -t "$SESSION:$window" -t 2 'source ../install/setup.bash' enter
 
         tmux send-keys -t "$SESSION:$window" -t 2 'ros2 run px4_offboard_control offboard_node' enter
 
-        tmux send-keys -t "$SESSION:$window" -t 3 'source install/setup.bash' enter
+        tmux send-keys -t "$SESSION:$window" -t 3 'source ../install/setup.bash' enter
 
         tmux send-keys -t "$SESSION:$window" -t 3 'ros2 run ros_gazebo_bridge lidar_bridge' enter
 fi
