@@ -29,9 +29,10 @@ class OffboardControl(Node):
 
     class Action:
 
-        def __init__(self, des: str, action_type: int) -> None:
+        def __init__(self, des: str, action_type: int, action: Action) -> None:
             self.description = des
             self.action_type = action_type
+            self.action_obj: Action = action
 
         def perform(self, offboard_object: "OffboardControl"):
             pass
@@ -40,20 +41,21 @@ class OffboardControl(Node):
         def construct_action(action_type,
                              x=None,
                              y=None,
-                             z=None) -> "OffboardControl.Action":
+                             z=None,
+                             action=None) -> "OffboardControl.Action":
             if (action_type == Action.ACTION_TAKE_OFF):
-                return OffboardControl.TakeOff()
+                return OffboardControl.TakeOff(action)
             elif (action_type == Action.ACTION_WAYPOINT):
-                return OffboardControl.Waypoint(x, y, z)
+                return OffboardControl.Waypoint(x, y, z, action)
             elif (action_type == Action.ACTION_LAND):
-                return OffboardControl.Landing()
+                return OffboardControl.Landing(action)
             else:
                 print(f"[WARNING] {action_type} is not a valid action type id")
 
     class TakeOff(Action):
 
-        def __init__(self):
-            super().__init__("Take off", Action.ACTION_TAKE_OFF)
+        def __init__(self, action: Action):
+            super().__init__("Take off", Action.ACTION_TAKE_OFF, action)
             self.setup_done = False
 
         def perform(self, offboard_object: "OffboardControl"):
@@ -61,9 +63,9 @@ class OffboardControl(Node):
 
     class Waypoint(Action):
 
-        def __init__(self, x, y, z) -> None:
+        def __init__(self, x, y, z, action: Action) -> None:
             super().__init__(f"Waypoint to ({x}, {y}, {z})",
-                             Action.ACTION_WAYPOINT)
+                             Action.ACTION_WAYPOINT, action)
             self.x = x
             self.y = y
             self.z = z
@@ -73,8 +75,8 @@ class OffboardControl(Node):
 
     class Landing(Action):
 
-        def __init__(self):
-            super().__init__("Landing", Action.ACTION_LAND)
+        def __init__(self, action: Action):
+            super().__init__("Landing", Action.ACTION_LAND, action)
 
         def perform(self, offboard_object: "OffboardControl"):
             offboard_object.land()
@@ -169,6 +171,7 @@ class OffboardControl(Node):
         string = "\n" + ('-' * dash_length) + "\n"
         string += f"(N, E, D): ({info.x:.4f}, {info.y:.4f}, {info.z:.4f})\n"
         string += f"(VN, VE, VD): ({info.vx:.4f}, {info.vy:.4f}, {info.vz:.4f})\n"
+        string += f"(ref_lat, ref_lon, ref_alt): ({info.ref_lat:.4f}, {info.ref_lon:.4f}, {info.ref_alt:.4f})\n"
         string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
         string += f"power level: {info.powerlevel:.2f}%\t"
         mode_string = "Armed" if info.arming_state == VehicleInfo.ARMING_STATE_ARMED else "Disarmed"
@@ -189,6 +192,11 @@ class OffboardControl(Node):
             vehicle_info.vx = self.vehicle_local_position.vx
             vehicle_info.vy = self.vehicle_local_position.vy
             vehicle_info.vz = self.vehicle_local_position.vz
+
+            vehicle_info.ref_lat = self.vehicle_local_position.ref_lat
+            vehicle_info.ref_lon = self.vehicle_local_position.ref_lon
+            vehicle_info.ref_alt = self.vehicle_local_position.ref_alt
+
         # Attitude
         if (self.vehicle_attitude is not None):
             vehicle_info.q = self.vehicle_attitude.q
@@ -201,8 +209,10 @@ class OffboardControl(Node):
         # actions
         if (len(self.action_queue) == 0):
             vehicle_info.current_action = "No action to be done"
+            vehicle_info.curr_action_obj = Action()
         else:
             vehicle_info.current_action = self.action_queue[0].description
+            vehicle_info.curr_action_obj = self.action_queue[0].action_obj
 
         self.print_vehicle_info(vehicle_info)
 
@@ -322,7 +332,8 @@ class OffboardControl(Node):
 
     def enqueue_action_callback(self, req, res):
         action = OffboardControl.Action.construct_action(
-            req.action.action, req.action.x, req.action.y, req.action.z)
+            req.action.action, req.action.x, req.action.y, req.action.z,
+            req.action)
         self.action_queue.append(action)
         res.success = True
         return res
