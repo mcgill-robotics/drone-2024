@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from enum import Enum
 from typing import Deque
 import collections
 from px4_msgs.msg import VehicleCommand
@@ -10,6 +9,7 @@ from px4_msgs.msg import VehicleCommandAck
 from px4_msgs.msg import BatteryStatus
 from px4_msgs.msg import VehicleStatus
 from px4_msgs.msg import VehicleLocalPosition
+from px4_msgs.msg import VehicleAttitude
 from custom_msgs.srv import RequestAction
 from custom_msgs.srv import SendAction
 from custom_msgs.msg import Action
@@ -22,16 +22,6 @@ import rclpy
 __autor__ = "Imad Issafras"
 __contact__ = "imad.issafras@outlook.com"
 
-# ROS imports
-
-# ROS msgs and srvs types
-
-# PX4 messages
-# In
-
-# Out
-
-# Other imports
 import os
 
 
@@ -128,6 +118,11 @@ class OffboardControl(Node):
             self.vehicle_command_ack_callback, qos_profile)
         self.vehicle_command_ack: VehicleCommandAck | None = None
 
+        self.vehicle_attitude_sub = self.create_subscription(
+            VehicleAttitude, '/fmu/out/vehicle_attitude',
+            self.vehicle_attitude_callback, qos_profile)
+        self.vehicle_attitude: VehicleAttitude | None = None
+
         # PX4 PUBS
         self.offboard_mode_pub = self.create_publisher(
             OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
@@ -174,10 +169,10 @@ class OffboardControl(Node):
         string = "\n" + ('-' * dash_length) + "\n"
         string += f"(N, E, D): ({info.x:.4f}, {info.y:.4f}, {info.z:.4f})\n"
         string += f"(VN, VE, VD): ({info.vx:.4f}, {info.vy:.4f}, {info.vz:.4f})\n"
+        string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
         string += f"power level: {info.powerlevel:.2f}%\t"
-        mode_string = "FW" if info.mode == VehicleStatus.VEHICLE_TYPE_FIXED_WING else \
-            "QC" if info.mode == VehicleStatus.VEHICLE_TYPE_ROTARY_WING else "OTHER"
-        string += f"mode: {info.mode}, {mode_string}\n"
+        mode_string = "Armed" if info.arming_state == VehicleInfo.ARMING_STATE_ARMED else "Disarmed"
+        string += f"arming state: {info.arming_state}, {mode_string}\n"
         string += f"current action: {info.current_action}\n"
         string += '-' * dash_length
         self.get_logger().info(string)
@@ -194,9 +189,12 @@ class OffboardControl(Node):
             vehicle_info.vx = self.vehicle_local_position.vx
             vehicle_info.vy = self.vehicle_local_position.vy
             vehicle_info.vz = self.vehicle_local_position.vz
+        # Attitude
+        if (self.vehicle_attitude is not None):
+            vehicle_info.q = self.vehicle_attitude.q
         # mode
         if (self.vehicle_status is not None):
-            vehicle_info.mode = self.vehicle_status.vehicle_type
+            vehicle_info.arming_state = self.vehicle_status.arming_state
         # power
         if (self.vehicle_battery_status is not None):
             vehicle_info.powerlevel = self.vehicle_battery_status.remaining * 100
@@ -318,6 +316,9 @@ class OffboardControl(Node):
 
     def vehicle_command_ack_callback(self, msg: VehicleCommandAck):
         self.vehicle_command_ack = msg
+
+    def vehicle_attitude_callback(self, msg: VehicleAttitude):
+        self.vehicle_attitude = msg
 
     def enqueue_action_callback(self, req, res):
         action = OffboardControl.Action.construct_action(

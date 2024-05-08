@@ -6,7 +6,11 @@ float64 vx
 float64 vy
 float64 vz
 
-uint32 mode
+float32[4] q
+
+uint32 arming_state
+uint8 ARMING_STATE_DISARMED = 1
+uint8 ARMING_STATE_ARMED    = 2
 
 float64 powerlevel
 string current_action
