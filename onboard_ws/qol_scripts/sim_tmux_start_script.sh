@@ -19,7 +19,7 @@ then
         tmux split-window -t "$SESSION:$window" -t 2 -h
 
         tmux send-keys -t "$SESSION:$window" -t 0 'cd' enter 'cd PX4-Autopilot' enter
-        tmux send-keys -t "$SESSION:$window" -t 0 'make px4_sitl gazebo-classic' enter
+        tmux send-keys -t "$SESSION:$window" -t 0 'make px4_sitl gz_x500' enter
 
         tmux send-keys -t "$SESSION:$window" -t 1 'MicroXRCEAgent udp4 -p 8888' enter
 
@@ -28,6 +28,8 @@ then
         tmux send-keys -t "$SESSION:$window" -t 2 'ros2 run px4_offboard_control offboard_node' enter
 
         tmux send-keys -t "$SESSION:$window" -t 3 'source install/setup.bash' enter
+
+        tmux send-keys -t "$SESSION:$window" -t 3 'ros2 run ros_gazebo_bridge lidar_bridge' enter
 fi
 # Attach Session, on the Main window
 tmux attach-session -t $SESSION
