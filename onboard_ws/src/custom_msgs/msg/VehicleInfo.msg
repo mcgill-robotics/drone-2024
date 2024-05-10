@@ -8,7 +8,9 @@ float64 vz
 
 float64 ref_lat
 float64 ref_lon
-float32 ref_alt
+float64 ref_alt
+
+float64 heading
 
 float32[4] q
 

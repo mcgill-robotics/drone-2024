@@ -42,11 +42,12 @@ class OffboardControl(Node):
                              x=None,
                              y=None,
                              z=None,
+                             yaw=None,
                              action=None) -> "OffboardControl.Action":
             if (action_type == Action.ACTION_TAKE_OFF):
                 return OffboardControl.TakeOff(action)
             elif (action_type == Action.ACTION_WAYPOINT):
-                return OffboardControl.Waypoint(x, y, z, action)
+                return OffboardControl.Waypoint(x, y, z, yaw, action)
             elif (action_type == Action.ACTION_LAND):
                 return OffboardControl.Landing(action)
             else:
@@ -63,15 +64,16 @@ class OffboardControl(Node):
 
     class Waypoint(Action):
 
-        def __init__(self, x, y, z, action: Action) -> None:
+        def __init__(self, x, y, z, yaw, action: Action) -> None:
             super().__init__(f"Waypoint to ({x}, {y}, {z})",
                              Action.ACTION_WAYPOINT, action)
             self.x = x
             self.y = y
             self.z = z
+            self.yaw = yaw
 
         def perform(self, offboard_object: "OffboardControl"):
-            offboard_object.waypoint(self.x, self.y, self.z)
+            offboard_object.waypoint(self.x, self.y, self.z, self.yaw)
 
     class Landing(Action):
 
@@ -144,8 +146,8 @@ class OffboardControl(Node):
             self.enqueue_action_callback)
 
         self.pop_action_service = self.create_service(
-            RequestAction, '/px4_action_queue/popright_action',
-            self.popright_action_callback)
+            RequestAction, '/px4_action_queue/popleft_action',
+            self.popleft_action_callback)
 
         # publishers timing
         timer_period = 0.1
@@ -196,6 +198,8 @@ class OffboardControl(Node):
             vehicle_info.ref_lat = self.vehicle_local_position.ref_lat
             vehicle_info.ref_lon = self.vehicle_local_position.ref_lon
             vehicle_info.ref_alt = self.vehicle_local_position.ref_alt
+
+            vehicle_info.heading = self.vehicle_local_position.heading
 
         # Attitude
         if (self.vehicle_attitude is not None):
@@ -289,12 +293,15 @@ class OffboardControl(Node):
         """
         return 3.
 
-    def waypoint(self, x, y, z, yaw=0.0):
+    def waypoint(self, x, y, z, yaw):
         """
             Waypoint action, only completes when within current_tolarance from the target waypoint
         """
         trajectorySetpoint = GotoSetpoint()
         trajectorySetpoint.position = [x, y, z]
+        if (yaw is not None):
+            trajectorySetpoint.flag_control_heading = True
+            trajectorySetpoint.heading = yaw
         self.goto_setpoint_pub.publish(trajectorySetpoint)
         if (((self.vehicle_local_position.x - x)**(2) +
              (self.vehicle_local_position.y - y)**(2) +
@@ -334,20 +341,21 @@ class OffboardControl(Node):
     def enqueue_action_callback(self, req, res):
         action = OffboardControl.Action.construct_action(
             req.action.action, req.action.x, req.action.y, req.action.z,
-            req.action)
+            req.action.yaw, req.action)
         self.action_queue.append(action)
         res.success = True
         return res
 
-    def popright_action_callback(self, req, res):
+    def popleft_action_callback(self, req, res):
         if (len(self.action_queue) == 0):
             res.action.action = Action.ACTION_NONE
             return res
-        action: OffboardControl.Action = self.action_queue.pop()
+        action: OffboardControl.Action = self.action_queue.popleft()
         res.action.action = action.action_type
         res.action.x = action.x
         res.action.y = action.y
         res.action.z = action.z
+        res.action.yaw = action.yaw
         return res
 
 
