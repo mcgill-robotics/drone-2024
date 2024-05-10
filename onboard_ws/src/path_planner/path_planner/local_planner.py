@@ -1,23 +1,25 @@
-import rclpy
-from rclpy.node import Node
-
 from custom_msgs.msg import VehicleInfo
 from custom_msgs.msg import Action
+import matplotlib.pyplot as plt
+import seaborn as sns
 from custom_msgs.msg import Waypoint
-
 from custom_msgs.srv import SendAction
 from custom_msgs.srv import RequestAction
-
-from sensor_msgs.msg import LaserScan
-
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
-
 import numpy as np
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+)
+from sensor_msgs.msg import LaserScan
 
 
 class LocalCoordinates:
 
-    def __init__(self, x=0.0, y=0.0, z=0.0, yaw=None):
+    def __init__(self, x=0.0, y=0.0, z=0.0, yaw: float | None =None):
         self.x = x
         self.y = y
         self.z = z
@@ -37,6 +39,8 @@ class LocalCoordinates:
         return ((self.x - x)**2 + (self.y - y)**2 + (self.z - z)**2)**(1 / 2)
 
 
+
+
 class VfhParam:
 
     def __init__(self,
@@ -47,7 +51,6 @@ class VfhParam:
                  threshold_low=10,
                  threshold_high=20,
                  s_max=25,
-                 step_size=1,
                  v_max=10,
                  mu_1=5,
                  mu_2=1,
@@ -82,6 +85,91 @@ class VfhParam:
             self.binary_polar_histogram_n_m_1 = np.full(self.num_slots, False)
         self.s_max = self.num_slots // 8
         self.h_m = self.threshold_high
+
+
+class VfhAlgorithm:
+
+    
+    def quat_apply(self, v):
+        def quat_mult(q1, q2):
+            a = q1[0]
+            u = np.array(q1[1:])
+            b = q2[0]
+            v = np.array(q2[1:])
+            left = a*b - np.dot(u,v) 
+            right = a*v + b*u + np.cross(u, v)
+            return [left, *right]
+        def quat_conjugate(q):
+            return [q[0], *(-np.array(q[1:]))]
+        v_quat = [0, *v]
+        q_cong = quat_conjugate(self.q)
+        tmp = quat_mult(v_quat, q_cong)
+        tmp = quat_mult(self.q, tmp)
+        return tmp[1:]
+
+    def __init__(self, space_size=60, cell_size=0.25):
+        """
+            builds the necessary data structures for the algorithm
+            space_size and cell_size relate to the configuration space C
+            assumes the robot is at the center of C for simplicity
+        """
+        self.params = VfhParam()
+        self.plane_hist = np.zeros(
+            (int(space_size / cell_size), int(space_size / cell_size)))
+        self.cell_size = cell_size
+        self.curr_pos: LocalCoordinates | None = None
+        self.q: list[float] | None= None
+        grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
+        self.fig, (self.ax, self.cbar_ax) = plt.subplots(1, 2, gridspec_kw = grid_kws)
+
+    def update_detections(self, msg: LaserScan):
+        # Not ready to interpret readings
+        if (self.q is None):
+            return
+        std_normal = [0, 0, 1]
+        normal = np.array(self.quat_apply(std_normal)) 
+        normal = normal / np.linalg.norm(normal)
+        reading_cert = abs(np.dot(std_normal, normal))
+        print(f"Current reading certainty: {reading_cert}")
+        
+        self.plane_hist -= 0.5
+        self.plane_hist[self.plane_hist < 0] = 0
+        for index, distance in enumerate(msg.ranges):
+            distance = min(distance, msg.range_max)
+            distance = max(distance, msg.range_min)
+            angle = (index * msg.angle_increment + msg.angle_min + self.curr_pos.yaw) % (2*np.pi)
+            dx = distance * np.cos(angle)
+            dy = distance * np.sin(angle)
+            dx, dy = int(dx / self.cell_size), int(dy / self.cell_size)
+            x, y = dx + self.plane_hist.shape[0] // 2, dy + self.plane_hist.shape[1] // 2
+            if (self.plane_hist[x, y] <= 10):
+                self.plane_hist[x, y] += reading_cert
+
+        self.plane_hist[0, 0] = 20
+        self.plane_hist[10, 10] = 20
+        sns.heatmap(data=self.plane_hist, ax=self.ax, cbar_ax=self.cbar_ax)
+        plt.draw()
+        # plt.show()
+        plt.pause(0.1)
+
+
+
+    def update_position(self, msg: VehicleInfo):
+        if (self.curr_pos is None):
+            self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
+            self.q = msg.q
+        tx, ty = int((msg.x - self.curr_pos.x) / self.cell_size), int((msg.y - self.curr_pos.y) / self.cell_size)
+        N, M = self.plane_hist.shape
+        image_translated = np.zeros_like(self.plane_hist)
+        image_translated[max(tx,0):M+min(tx,0), max(ty,0):N+min(ty,0)] = self.plane_hist[-min(tx,0):M-max(tx,0), -min(ty,0):N-max(ty,0)]
+        self.plane_hist = image_translated
+        self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
+        self.q = msg.q
+        
+
+    def generate_target(self, goal_pos: LocalCoordinates):
+        
+        pass
 
 
 class VfhPlanner(Node):
@@ -126,12 +214,12 @@ class VfhPlanner(Node):
             self.get_logger().info('service not available, waiting again...')
 
         timer_period = 0.5
-        self.timer_1 = self.create_timer(timer_period, self.controller_tick)
+        # self.timer_1 = self.create_timer(timer_period, self.controller_tick)
         # self.goal_waypoint = LocalCoordinates(0.0, 10.0, -10.0)
         self.timer_2 = self.create_timer(timer_period * 2,
-                                         self.planner_tick_v2)
+                                         self.planner_tick_v3)
 
-        self.vfh_params = VfhParam()
+        self.planner = VfhAlgorithm()
 
     def send_action(self, action: Action):
         self.action_req.action = action
@@ -273,12 +361,12 @@ class VfhPlanner(Node):
                 candidates.append(c_r)
                 candidates.append(c_l)
                 if (c_l < c_r):
-                    ## Wrap issue
+                    # Wrap issue
                     if not (c_l <= k_targ <= c_r):
                         c_t = k_targ
                         candidates.append(c_t)
                 else:
-                    ## no wrap issue
+                    # no wrap issue
                     if (c_r <= k_targ <= c_l):
                         c_t = k_targ
                         candidates.append(c_t)
@@ -323,6 +411,9 @@ class VfhPlanner(Node):
         self.get_logger().warn(
             f"\n\tk_targ : {k_targ},\t k_steer: {k_steer}\n")
 
+    def planner_tick_v3(self):
+        target = self.planner.generate_target(self.goal_waypoint)
+
     @staticmethod
     def target_match_action(target: LocalCoordinates, msg: Action):
         command_bool = msg.action == Action.ACTION_WAYPOINT
@@ -357,7 +448,7 @@ class VfhPlanner(Node):
               and self.vehicle_info.curr_action_obj.action
               != Action.ACTION_TAKE_OFF and
               self.vehicle_info.curr_action_obj.action != Action.ACTION_LAND):
-            ## This should be the part of the code that does obstacle avoidance and publishes action
+            # This should be the part of the code that does obstacle avoidance and publishes action
 
             if (not VfhPlanner.target_match_action(
                     self.target_waypoint, self.vehicle_info.curr_action_obj)):
@@ -383,10 +474,11 @@ class VfhPlanner(Node):
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.vehicle_info = msg
+        self.planner.update_position(msg)
 
     def laser_scan_callback(self, msg: LaserScan):
-        self.vfh_params.adapt(msg)
         self.laser_scan = msg
+        self.planner.update_detections(msg)
 
 
 def main(args=None):
