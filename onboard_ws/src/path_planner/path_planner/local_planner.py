@@ -40,28 +40,29 @@ class LocalCoordinates:
 
 class VfhParam:
 
-    def __init__(self,
-                 a=0,
-                 b=1,
-                 certainty=1,
-                 robot_radius=2.5,
-                 threshold_low=10,
-                 threshold_high=20,
-                 s_max=25,
-                 v_max=10,
-                 mu_1=5,
-                 mu_2=1,
-                 h_m=10):
+    def __init__(
+            self,
+            angular_resolution=0.0872664,  # 5 degrees, but in radians
+            a=0,
+            b=1,
+            robot_radius=1.0,
+            threshold_low=10,
+            threshold_high=20,
+            s_max=25,
+            v_max=10,
+            mu_1=5,
+            mu_2=1,
+            h_m=10):
+        self.angular_resolution = angular_resolution
+        self.num_slots = int(np.pi * 2 / angular_resolution)
         # Set a and b such that a - b * (range_max) =  0, with a, b > 0
         self.a = a
         self.b = b
-        self.cert = certainty
         self.robot_radius = robot_radius
 
-        self.num_slots = 360
         self.threshold_low = threshold_low
         self.threshold_high = threshold_high
-        self.binary_polar_histogram_n_m_1 = None
+        self.binary_polar_histogram_n_m_1 = np.full(self.num_slots, False)
 
         self.s_max = s_max
         self.mu_target_diff = mu_1
@@ -71,17 +72,22 @@ class VfhParam:
         self.v_max = v_max
         self.h_m = h_m
 
-    def adapt(self, msg: LaserScan):
-        self.b = 2
-        self.a = self.b * (msg.range_max**2) + 1
-        self.num_slots = int(2 * np.pi / msg.angle_increment)
-        self.threshold_low = (abs(np.arctan2(self.robot_radius, msg.range_max))
-                              / msg.angle_increment) * 8
-        self.threshold_high = self.threshold_low * 10
-        if (self.binary_polar_histogram_n_m_1 is None):
-            self.binary_polar_histogram_n_m_1 = np.full(self.num_slots, False)
-        self.s_max = self.num_slots // 8
-        self.h_m = self.threshold_high
+    def adapt(self, active_region_width):
+        self.b = 1
+        self.a = self.b * ((active_region_width - 1) / 2)**2 + 1
+
+    # def adapt(self, msg: LaserScan):
+    #     self.b = 2
+    #     self.a = self.b * (msg.range_max**2) + 1
+    #     self.num_slots = int(2 * np.pi / msg.angle_increment)
+    #     self.threshold_low = (abs(np.arctan2(self.robot_radius, msg.range_max))
+    #                           / msg.angle_increment) * 8
+    #     self.threshold_high = self.threshold_low * 10
+    #     if (self.binary_polar_histogram_n_m_1 is None):
+    #         self.binary_polar_histogram_n_m_1 = np.full(self.num_slots, False)
+    #     self.s_max = self.num_slots // 8
+    #     self.h_m = self.threshold_high
+    #
 
 
 class VfhAlgorithm:
@@ -102,8 +108,11 @@ class VfhAlgorithm:
         self.curr_pos: LocalCoordinates | None = None
         self.q: list[float] | None = None
         self.active_region_width = int(active_region_size / cell_size)
+        self.params.adapt(self.active_region_width)
         # grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
         self.fig, self.ax = plt.subplots()
+        # self.ax_img = self.ax.imshow(self.plane_hist.T, cmap='hot')
+        # self.ax.invert_yaxis()
 
     def quat_apply(self, v):
 
@@ -135,7 +144,7 @@ class VfhAlgorithm:
 
     @staticmethod
     def reverse_sigmoid(x, spread=1, offset=10):
-        denom = np.power(np.e, -spread * (x - offset))
+        denom = 1 + np.power(np.e, -spread * (x - offset))
         return -1 / denom + 1
 
     def update_detections(self, msg: LaserScan):
@@ -145,37 +154,47 @@ class VfhAlgorithm:
         std_normal = [0, 0, 1]
         normal = np.array(self.quat_apply(std_normal))
         normal = normal / np.linalg.norm(normal)
-        dot = np.dot(std_normal, normal)
-        normal_diff_cert = (dot)**20
         # print(f"Current reading certainty: {normal_diff_cert}")
 
-        # self.plane_hist -= 1
-        # self.plane_hist[self.plane_hist < 0] = 0
+        self.plane_hist -= 0.1
+        self.plane_hist[self.plane_hist < 0] = 0
         for index, distance in enumerate(msg.ranges):
             if not (msg.range_min <= distance <= msg.range_max):
                 continue
-            angle = (index * msg.angle_increment + msg.angle_min -
-                     self.curr_pos.yaw) % (2 * np.pi)
-            distance = distance * abs(dot)
-            dx = distance * np.cos(angle)
-            dy = distance * np.sin(angle)
-            dx, dy = int(dx / self.cell_size), -int(dy / self.cell_size)
+            # angle = (abs(msg.angle_min) + self.curr_pos.yaw -
+            #          index * msg.angle_increment) % (2 * np.pi)
+            # distance = distance * abs(dot)
+            angle = (abs(msg.angle_min) -
+                     index * msg.angle_increment) % (2 * np.pi)
+            plane_dx = distance * np.cos(angle)
+            plane_dy = distance * np.sin(angle)
+            plane_dz = self.curr_pos.z
+            plane_vec = np.array([plane_dx, plane_dy, plane_dz])
+            transformed_vec = np.array(self.quat_apply(plane_vec))
+            dx, dy = transformed_vec[0], transformed_vec[1]
+            dx, dy = int(dx / self.cell_size), int(dy / self.cell_size)
             x, y = dx + self.plane_hist.shape[
                 0] // 2, dy + self.plane_hist.shape[1] // 2
+            if not (0 <= x <= self.plane_hist.shape[0]) or not (
+                    0 <= y <= self.plane_hist.shape[1]):
+                continue
             if (self.plane_hist[x, y] <= 5):
+                height_diff = abs(self.curr_pos.z - transformed_vec[2])
+                height_cert = self.reverse_sigmoid(
+                    height_diff, offset=abs(self.curr_pos.z) / 4)
                 distance_cert = self.reverse_sigmoid(distance,
                                                      offset=msg.range_max *
-                                                     normal_diff_cert)
+                                                     height_cert)
                 # cert = distance_cert * normal_diff_cert
-                cert = distance_cert
-                self.plane_hist[x, y] += cert
-                # self.plane_hist[x, y] = 1
+                # cert = distance_cert
+                self.plane_hist[x, y] += distance_cert
+                # self.plane_hist[x, y] += 1
 
     def update_position(self, msg: VehicleInfo):
         if (self.curr_pos is None):
             self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
             self.q = msg.q
-        tx, ty = -int((msg.x - self.curr_pos.x) / self.cell_size), int(
+        tx, ty = -int((msg.x - self.curr_pos.x) / self.cell_size), -int(
             (msg.y - self.curr_pos.y) / self.cell_size)
         N, M = self.plane_hist.shape
         image_translated = np.zeros_like(self.plane_hist)
@@ -189,6 +208,26 @@ class VfhAlgorithm:
         self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
         self.q = msg.q
 
+    def generate_smooth(self, active_region):
+        # CCW angles , index 0 at angle 0
+        polar_histogram = np.zeros(self.params.num_slots)
+        x_0, y_0 = int(active_region.shape[0] / 2), int(
+            active_region.shape[1] / 2)
+        for x in range(active_region.shape[0]):
+            for y in range(active_region.shape[1]):
+                cert = self.plane_hist[x][y]
+                dy = y - y_0
+                dx = x - x_0
+                dist = ((dx)**2 + (dy)**2)**(1 / 2)
+                angle = np.arctan2(dy, dx)
+                magn = cert**2 * (self.params.a - self.params.b * dist**2)
+                gamma = np.arcsin(self.params.robot_radius / dist)
+                for k in range(self.params.num_slots):
+                    if (angle - gamma <= k * self.params.angular_resolution <=
+                            angle + gamma):
+                        polar_histogram[k] += magn
+        return polar_histogram
+
     def generate_target(self, goal_pos: LocalCoordinates,
                         vehicle_info: VehicleInfo, laser_scan: LaserScan):
         self.update_position(vehicle_info)
@@ -200,12 +239,11 @@ class VfhAlgorithm:
         active_region = self.plane_hist[half_x - half_width:half_x +
                                         half_width, half_y -
                                         half_width:half_y + half_width]
-
-        self.plane_hist -= 0.75
-        self.plane_hist[self.plane_hist < 0] = 0
-        self.ax.imshow(self.plane_hist.T, cmap='hot')
-        self.ax.invert_yaxis()
-        plt.pause(0.001)
+        # self.ax.imshow(self.plane_hist.T, cmap='hot')
+        # self.ax.invert_yaxis()
+        # # plt.show()
+        # plt.pause(0.001)
+        smooth_active = self.generate_smooth(active_region)
 
         # self.ax.imshow(active_region.T, cmap='hot')
         # self.ax.invert_yaxis()
@@ -451,6 +489,8 @@ class VfhPlanner(Node):
             f"\n\tk_targ : {k_targ},\t k_steer: {k_steer}\n")
 
     def planner_tick_v3(self):
+        if (self.vehicle_info is None or self.laser_scan is None):
+            return
         target = self.planner.generate_target(self.goal_waypoint,
                                               self.vehicle_info,
                                               self.laser_scan)
