@@ -1,7 +1,6 @@
 from custom_msgs.msg import VehicleInfo
 from custom_msgs.msg import Action
 import matplotlib.pyplot as plt
-import seaborn as sns
 from custom_msgs.msg import Waypoint
 from custom_msgs.srv import SendAction
 from custom_msgs.srv import RequestAction
@@ -19,7 +18,7 @@ from sensor_msgs.msg import LaserScan
 
 class LocalCoordinates:
 
-    def __init__(self, x=0.0, y=0.0, z=0.0, yaw: float | None =None):
+    def __init__(self, x=0.0, y=0.0, z=0.0, yaw: float | None = None):
         self.x = x
         self.y = y
         self.z = z
@@ -37,8 +36,6 @@ class LocalCoordinates:
 
     def distance_to_xyz(self, x, y, z):
         return ((self.x - x)**2 + (self.y - y)**2 + (self.z - z)**2)**(1 / 2)
-
-
 
 
 class VfhParam:
@@ -89,87 +86,127 @@ class VfhParam:
 
 class VfhAlgorithm:
 
-    
+    def __init__(self, space_size=120, cell_size=0.25, active_region_size=60):
+        """
+            builds the necessary data structures for the algorithm
+            space_size and cell_size relate to the configuration space C
+            assumes the robot is at the center of C for simplicity
+            active_region_size relates to C* it is in meteres
+            (orignial paper hade it in terms of number of cells)
+        """
+        self.params = VfhParam()
+        # things at position x, y in the plane_hist are actually at x, y in NED (from the center)
+        self.plane_hist = np.zeros(
+            (int(space_size / cell_size), int(space_size / cell_size)))
+        self.cell_size = cell_size
+        self.curr_pos: LocalCoordinates | None = None
+        self.q: list[float] | None = None
+        self.active_region_width = int(active_region_size / cell_size)
+        # grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
+        self.fig, self.ax = plt.subplots()
+
     def quat_apply(self, v):
+
         def quat_mult(q1, q2):
             a = q1[0]
             u = np.array(q1[1:])
             b = q2[0]
             v = np.array(q2[1:])
-            left = a*b - np.dot(u,v) 
-            right = a*v + b*u + np.cross(u, v)
+            left = a * b - np.dot(u, v)
+            right = a * v + b * u + np.cross(u, v)
             return [left, *right]
+
         def quat_conjugate(q):
             return [q[0], *(-np.array(q[1:]))]
+
         v_quat = [0, *v]
         q_cong = quat_conjugate(self.q)
         tmp = quat_mult(v_quat, q_cong)
         tmp = quat_mult(self.q, tmp)
         return tmp[1:]
 
-    def __init__(self, space_size=60, cell_size=0.25):
-        """
-            builds the necessary data structures for the algorithm
-            space_size and cell_size relate to the configuration space C
-            assumes the robot is at the center of C for simplicity
-        """
-        self.params = VfhParam()
-        self.plane_hist = np.zeros(
-            (int(space_size / cell_size), int(space_size / cell_size)))
-        self.cell_size = cell_size
-        self.curr_pos: LocalCoordinates | None = None
-        self.q: list[float] | None= None
-        grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
-        self.fig, (self.ax, self.cbar_ax) = plt.subplots(1, 2, gridspec_kw = grid_kws)
+    @staticmethod
+    def is_valid_quat(array):
+        if array is None:
+            return False
+        if not np.any(np.isnan(array)):
+            return abs(1 - np.linalg.norm(array)) <= 1e-10
+        return False
+
+    @staticmethod
+    def reverse_sigmoid(x, spread=1, offset=10):
+        denom = np.power(np.e, -spread * (x - offset))
+        return -1 / denom + 1
 
     def update_detections(self, msg: LaserScan):
         # Not ready to interpret readings
-        if (self.q is None):
+        if (not self.is_valid_quat(self.q)):
             return
         std_normal = [0, 0, 1]
-        normal = np.array(self.quat_apply(std_normal)) 
+        normal = np.array(self.quat_apply(std_normal))
         normal = normal / np.linalg.norm(normal)
-        reading_cert = abs(np.dot(std_normal, normal))
-        print(f"Current reading certainty: {reading_cert}")
-        
-        self.plane_hist -= 0.5
-        self.plane_hist[self.plane_hist < 0] = 0
+        dot = np.dot(std_normal, normal)
+        normal_diff_cert = (dot)**20
+        # print(f"Current reading certainty: {normal_diff_cert}")
+
+        # self.plane_hist -= 1
+        # self.plane_hist[self.plane_hist < 0] = 0
         for index, distance in enumerate(msg.ranges):
-            distance = min(distance, msg.range_max)
-            distance = max(distance, msg.range_min)
-            angle = (index * msg.angle_increment + msg.angle_min + self.curr_pos.yaw) % (2*np.pi)
+            if not (msg.range_min <= distance <= msg.range_max):
+                continue
+            angle = (index * msg.angle_increment + msg.angle_min +
+                     self.curr_pos.yaw) % (2 * np.pi)
+            distance = distance * abs(dot)
             dx = distance * np.cos(angle)
             dy = distance * np.sin(angle)
             dx, dy = int(dx / self.cell_size), int(dy / self.cell_size)
-            x, y = dx + self.plane_hist.shape[0] // 2, dy + self.plane_hist.shape[1] // 2
-            if (self.plane_hist[x, y] <= 10):
-                self.plane_hist[x, y] += reading_cert
+            x, y = dx + self.plane_hist.shape[
+                0] // 2, dy + self.plane_hist.shape[1] // 2
+            if (self.plane_hist[x, y] <= 5):
+                distance_cert = self.reverse_sigmoid(distance,
+                                                     offset=msg.range_max *
+                                                     normal_diff_cert)
+                # cert = distance_cert * normal_diff_cert
+                cert = distance_cert
+                # self.plane_hist[x, y] += cert
+                self.plane_hist[x, y] = 1
 
-        self.plane_hist[0, 0] = 20
-        self.plane_hist[10, 10] = 20
-        sns.heatmap(data=self.plane_hist, ax=self.ax, cbar_ax=self.cbar_ax)
-        plt.draw()
-        # plt.show()
-        plt.pause(0.1)
-
-
+        self.plane_hist -= 0.75
+        self.plane_hist[self.plane_hist < 0] = 0
+        self.ax.imshow(self.plane_hist.T, cmap='hot')
+        self.ax.invert_yaxis()
+        plt.pause(0.01)
 
     def update_position(self, msg: VehicleInfo):
         if (self.curr_pos is None):
             self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
             self.q = msg.q
-        tx, ty = int((msg.x - self.curr_pos.x) / self.cell_size), int((msg.y - self.curr_pos.y) / self.cell_size)
+        tx, ty = int((msg.x - self.curr_pos.x) / self.cell_size), int(
+            (msg.y - self.curr_pos.y) / self.cell_size)
         N, M = self.plane_hist.shape
         image_translated = np.zeros_like(self.plane_hist)
-        image_translated[max(tx,0):M+min(tx,0), max(ty,0):N+min(ty,0)] = self.plane_hist[-min(tx,0):M-max(tx,0), -min(ty,0):N-max(ty,0)]
+        image_translated[max(tx, 0):M + min(tx, 0),
+                         max(ty, 0):N +
+                         min(ty, 0)] = self.plane_hist[-min(tx, 0):M -
+                                                       max(tx, 0),
+                                                       -min(ty, 0):N -
+                                                       max(ty, 0)]
         self.plane_hist = image_translated
         self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
         self.q = msg.q
-        
 
     def generate_target(self, goal_pos: LocalCoordinates):
-        
-        pass
+        N, M = self.plane_hist.shape
+        half_x = int(N / 2)
+        half_y = int(M / 2)
+        half_width = int(self.active_region_width / 2)
+        active_region = self.plane_hist[half_x - half_width:half_x +
+                                        half_width, half_y -
+                                        half_width:half_y + half_width]
+
+        # self.ax.imshow(active_region.T, cmap='hot')
+        # self.ax.invert_yaxis()
+        # plt.pause(0.01)
 
 
 class VfhPlanner(Node):
