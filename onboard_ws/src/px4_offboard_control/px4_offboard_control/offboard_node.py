@@ -173,6 +173,7 @@ class OffboardControl(Node):
         string = "\n" + ('-' * dash_length) + "\n"
         string += f"(N, E, D): ({info.x:.4f}, {info.y:.4f}, {info.z:.4f})\n"
         string += f"(VN, VE, VD): ({info.vx:.4f}, {info.vy:.4f}, {info.vz:.4f})\n"
+        string += f"heading: {info.heading}\n"
         string += f"(ref_lat, ref_lon, ref_alt): ({info.ref_lat:.4f}, {info.ref_lon:.4f}, {info.ref_alt:.4f})\n"
         string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
         string += f"power level: {info.powerlevel:.2f}%\t"

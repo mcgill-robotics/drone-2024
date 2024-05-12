@@ -154,12 +154,12 @@ class VfhAlgorithm:
         for index, distance in enumerate(msg.ranges):
             if not (msg.range_min <= distance <= msg.range_max):
                 continue
-            angle = (index * msg.angle_increment + msg.angle_min +
+            angle = (index * msg.angle_increment + msg.angle_min -
                      self.curr_pos.yaw) % (2 * np.pi)
             distance = distance * abs(dot)
             dx = distance * np.cos(angle)
             dy = distance * np.sin(angle)
-            dx, dy = int(dx / self.cell_size), int(dy / self.cell_size)
+            dx, dy = int(dx / self.cell_size), -int(dy / self.cell_size)
             x, y = dx + self.plane_hist.shape[
                 0] // 2, dy + self.plane_hist.shape[1] // 2
             if (self.plane_hist[x, y] <= 5):
@@ -168,20 +168,14 @@ class VfhAlgorithm:
                                                      normal_diff_cert)
                 # cert = distance_cert * normal_diff_cert
                 cert = distance_cert
-                # self.plane_hist[x, y] += cert
-                self.plane_hist[x, y] = 1
-
-        self.plane_hist -= 0.75
-        self.plane_hist[self.plane_hist < 0] = 0
-        self.ax.imshow(self.plane_hist.T, cmap='hot')
-        self.ax.invert_yaxis()
-        plt.pause(0.01)
+                self.plane_hist[x, y] += cert
+                # self.plane_hist[x, y] = 1
 
     def update_position(self, msg: VehicleInfo):
         if (self.curr_pos is None):
             self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
             self.q = msg.q
-        tx, ty = int((msg.x - self.curr_pos.x) / self.cell_size), int(
+        tx, ty = -int((msg.x - self.curr_pos.x) / self.cell_size), int(
             (msg.y - self.curr_pos.y) / self.cell_size)
         N, M = self.plane_hist.shape
         image_translated = np.zeros_like(self.plane_hist)
@@ -195,7 +189,10 @@ class VfhAlgorithm:
         self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
         self.q = msg.q
 
-    def generate_target(self, goal_pos: LocalCoordinates):
+    def generate_target(self, goal_pos: LocalCoordinates,
+                        vehicle_info: VehicleInfo, laser_scan: LaserScan):
+        self.update_position(vehicle_info)
+        self.update_detections(laser_scan)
         N, M = self.plane_hist.shape
         half_x = int(N / 2)
         half_y = int(M / 2)
@@ -203,6 +200,12 @@ class VfhAlgorithm:
         active_region = self.plane_hist[half_x - half_width:half_x +
                                         half_width, half_y -
                                         half_width:half_y + half_width]
+
+        self.plane_hist -= 0.75
+        self.plane_hist[self.plane_hist < 0] = 0
+        self.ax.imshow(self.plane_hist.T, cmap='hot')
+        self.ax.invert_yaxis()
+        plt.pause(0.001)
 
         # self.ax.imshow(active_region.T, cmap='hot')
         # self.ax.invert_yaxis()
@@ -253,8 +256,7 @@ class VfhPlanner(Node):
         timer_period = 0.5
         # self.timer_1 = self.create_timer(timer_period, self.controller_tick)
         # self.goal_waypoint = LocalCoordinates(0.0, 10.0, -10.0)
-        self.timer_2 = self.create_timer(timer_period * 2,
-                                         self.planner_tick_v3)
+        self.timer_2 = self.create_timer(0.01, self.planner_tick_v3)
 
         self.planner = VfhAlgorithm()
 
@@ -449,7 +451,9 @@ class VfhPlanner(Node):
             f"\n\tk_targ : {k_targ},\t k_steer: {k_steer}\n")
 
     def planner_tick_v3(self):
-        target = self.planner.generate_target(self.goal_waypoint)
+        target = self.planner.generate_target(self.goal_waypoint,
+                                              self.vehicle_info,
+                                              self.laser_scan)
 
     @staticmethod
     def target_match_action(target: LocalCoordinates, msg: Action):
@@ -511,11 +515,9 @@ class VfhPlanner(Node):
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.vehicle_info = msg
-        self.planner.update_position(msg)
 
     def laser_scan_callback(self, msg: LaserScan):
         self.laser_scan = msg
-        self.planner.update_detections(msg)
 
 
 def main(args=None):
