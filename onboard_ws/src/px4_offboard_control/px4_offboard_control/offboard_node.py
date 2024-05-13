@@ -285,7 +285,7 @@ class OffboardControl(Node):
         trajectorySetpoint.position = [0.0, 0.0, target_height]
         self.goto_setpoint_pub.publish(trajectorySetpoint)
 
-        if (abs(self.vehicle_local_position.z - target_height) <= 0.1):
+        if (abs(self.vehicle_local_position.z - target_height) <= 0.3):
             self.action_queue.popleft()
 
     def current_tolerance(self):
@@ -304,11 +304,11 @@ class OffboardControl(Node):
             trajectorySetpoint.flag_control_heading = True
             trajectorySetpoint.heading = yaw
         self.goto_setpoint_pub.publish(trajectorySetpoint)
-        if (((self.vehicle_local_position.x - x)**(2) +
-             (self.vehicle_local_position.y - y)**(2) +
-             (self.vehicle_local_position.z - z)**(2))**(1 / 2)
-                <= self.current_tolerance()):
-            self.action_queue.popleft()
+        # if (((self.vehicle_local_position.x - x)**(2) +
+        #      (self.vehicle_local_position.y - y)**(2) +
+        #      (self.vehicle_local_position.z - z)**(2))**(1 / 2)
+        #         <= self.current_tolerance()):
+        #     self.action_queue.popleft()
 
     def land(self):
         """
