@@ -18,7 +18,7 @@ from sensor_msgs.msg import LaserScan
 
 class LocalCoordinates:
 
-    def __init__(self, x=0.0, y=0.0, z=0.0, yaw: float | None = None):
+    def __init__(self, x=0.0, y=0.0, z=0.0, yaw=0.0):
         self.x = x
         self.y = y
         self.z = z
@@ -34,6 +34,9 @@ class LocalCoordinates:
             return False
         return self.x == o.x and self.y == o.y and self.z == o.z
 
+    def __str__(self):
+        return f"(x, y, z, yaw): ({self.x:.4f}, {self.y:.4f}, {self.z:.4f}, {self.yaw:.4f})\n"
+
     def distance_to_xyz(self, x, y, z):
         return ((self.x - x)**2 + (self.y - y)**2 + (self.z - z)**2)**(1 / 2)
 
@@ -46,13 +49,13 @@ class VfhParam:
             a=0,
             b=1,
             robot_radius=1.0,
-            threshold_low=10,
-            threshold_high=20,
-            s_max=25,
+            threshold_low=100,
+            threshold_high=500,
+            s_max=16,
             v_max=10,
             mu_1=5,
             mu_2=1,
-            h_m=10):
+            h_m=500):
         self.angular_resolution = angular_resolution
         self.num_slots = int(np.pi * 2 / angular_resolution)
         # Set a and b such that a - b * (range_max) =  0, with a, b > 0
@@ -73,7 +76,7 @@ class VfhParam:
         self.h_m = h_m
 
     def adapt(self, active_region_width):
-        self.b = 1
+        self.b = 0.001
         self.a = self.b * ((active_region_width - 1) / 2)**2 + 1
 
     # def adapt(self, msg: LaserScan):
@@ -110,9 +113,9 @@ class VfhAlgorithm:
         self.active_region_width = int(active_region_size / cell_size)
         self.params.adapt(self.active_region_width)
         # grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
-        self.fig, self.ax = plt.subplots()
+        self.fig, (self.ax, self.ax2) = plt.subplots(1, 2)
         # self.ax_img = self.ax.imshow(self.plane_hist.T, cmap='hot')
-        # self.ax.invert_yaxis()
+        # self.ax.invert_yaxis()self.ax.plot(
 
     def quat_apply(self, v):
 
@@ -156,7 +159,7 @@ class VfhAlgorithm:
         normal = normal / np.linalg.norm(normal)
         # print(f"Current reading certainty: {normal_diff_cert}")
 
-        self.plane_hist -= 0.1
+        self.plane_hist -= 0.5
         self.plane_hist[self.plane_hist < 0] = 0
         for index, distance in enumerate(msg.ranges):
             if not (msg.range_min <= distance <= msg.range_max):
@@ -215,21 +218,127 @@ class VfhAlgorithm:
             active_region.shape[1] / 2)
         for x in range(active_region.shape[0]):
             for y in range(active_region.shape[1]):
-                cert = self.plane_hist[x][y]
+                if (x == x_0 and y == y_0):
+                    continue
+                cert = active_region[x][y]
                 dy = y - y_0
                 dx = x - x_0
                 dist = ((dx)**2 + (dy)**2)**(1 / 2)
-                angle = np.arctan2(dy, dx)
+                angle = np.arctan2(dy, dx) % (2 * np.pi)
                 magn = cert**2 * (self.params.a - self.params.b * dist**2)
                 gamma = np.arcsin(self.params.robot_radius / dist)
-                for k in range(self.params.num_slots):
-                    if (angle - gamma <= k * self.params.angular_resolution <=
-                            angle + gamma):
-                        polar_histogram[k] += magn
+                if (magn != 0):
+                    # print(f"Found magnitude for {x}, {y}, {magn}")
+                    for k in range(self.params.num_slots):
+                        if (angle - gamma <= k * self.params.angular_resolution
+                                <= angle + gamma):
+                            polar_histogram[k] += magn
+                            # print(f"+1", end=" ")
+                    # print("\n")
         return polar_histogram
 
+    def generate_masked_histogram(self, smooth_histogram):
+        res = np.copy(self.params.binary_polar_histogram_n_m_1)
+        res[smooth_histogram > self.params.threshold_high] = True
+        res[smooth_histogram < self.params.threshold_low] = False
+        self.params.binary_polar_histogram_n_m_1 = res
+        return res
+
+    def retrieve_valleys(self, obstacle_histogram):
+        valleys = []
+        valley_tmp = []
+        explored = 0
+        index = 0
+        # obstacles
+        if (np.any(obstacle_histogram) and not np.all(obstacle_histogram)):
+            # walk backwards to find first hill
+            next_index = (index + 1) % len(obstacle_histogram)
+            while not (obstacle_histogram[index]
+                       and not obstacle_histogram[next_index]):
+                index = (index - 1) % len(obstacle_histogram)
+                next_index = (index + 1) % len(obstacle_histogram)
+
+            while explored < len(obstacle_histogram):
+                index = index % len(obstacle_histogram)
+                next_index = (index + 1) % len(obstacle_histogram)
+                if (obstacle_histogram[index]
+                        and not obstacle_histogram[next_index]):
+                    # adding the K_rights
+                    valley_tmp.append(next_index)
+                if (not obstacle_histogram[index]
+                        and obstacle_histogram[next_index]):
+                    # set k_left, reset k_tmp
+                    valley_tmp.append(next_index)
+                    valleys.append(valley_tmp)
+                    valley_tmp = []
+                index += 1
+                explored += 1
+        return valleys
+
+    def sector_distance(self, s1, s2):
+        return min(abs(s1 - s2), abs(s1 - s2 + self.params.num_slots),
+                   abs(s1 - s2 - self.params.num_slots))
+
+    def retrieve_candidates(self, valleys, target_sector):
+        candidates = []
+        if (len(valleys) == 0):
+            candidates.append(target_sector)
+            return candidates
+        for k_right, k_left in valleys:
+            distance = self.sector_distance(k_right, k_left)
+            if (distance < self.params.s_max):
+                # narrow
+                candidates.append(
+                    ((k_right + k_left) // 2) % self.params.num_slots)
+            else:
+                # wide
+                c_r = (k_right +
+                       self.params.s_max // 2) % self.params.num_slots
+                c_l = (k_left - self.params.s_max // 2) % self.params.num_slots
+                candidates.append(c_r)
+                candidates.append(c_l)
+                if (c_l < c_r):
+                    # Wrap issue
+                    if not (c_l <= target_sector <= c_r):
+                        candidates.append(target_sector)
+                else:
+                    # no wrap issue
+                    if (c_r <= target_sector <= c_l):
+                        candidates.append(target_sector)
+        return candidates
+
+    def choose_candidate(self, candidates, target_sector):
+        cost = []
+        for candidate in candidates:
+            cost_tmp = self.params.mu_target_diff * self.sector_distance(
+                candidate, target_sector)
+            if self.params.last_steering_dir is not None:
+                cost_tmp += self.params.mu_steering_diff * self.sector_distance(
+                    candidate, self.params.last_steering_dir)
+            cost.append(cost_tmp)
+        min_cost = np.min(cost)
+        index = cost.index(min_cost)
+        k_steer = candidates[index]
+        self.params.last_steering_dir = k_steer
+        return k_steer
+
+    def calculate_movement_vec(self, candidate, dt_secs, smoothed_value,
+                               goal_pos):
+        angle = candidate * self.params.angular_resolution
+        h_pp_c = min(smoothed_value, self.params.h_m)
+        v_p = self.params.v_max * (1 - h_pp_c / self.params.h_m)
+        speed_step = v_p * dt_secs
+
+        dist_step = goal_pos.distance_to_xyz(self.curr_pos.x, self.curr_pos.y,
+                                             goal_pos.z)
+
+        step_size = min(speed_step, dist_step)
+
+        return step_size * np.cos(angle), step_size * np.sin(angle)
+
     def generate_target(self, goal_pos: LocalCoordinates,
-                        vehicle_info: VehicleInfo, laser_scan: LaserScan):
+                        vehicle_info: VehicleInfo, laser_scan: LaserScan,
+                        dt_secs: float):
         self.update_position(vehicle_info)
         self.update_detections(laser_scan)
         N, M = self.plane_hist.shape
@@ -244,10 +353,36 @@ class VfhAlgorithm:
         # # plt.show()
         # plt.pause(0.001)
         smooth_active = self.generate_smooth(active_region)
+        obstacle_histogram = self.generate_masked_histogram(smooth_active)
 
-        # self.ax.imshow(active_region.T, cmap='hot')
-        # self.ax.invert_yaxis()
-        # plt.pause(0.01)
+        # self.ax2.imshow(active_region.T, cmap='hot')
+        # self.ax2.invert_yaxis()
+        # self.ax.clear()
+        # self.ax.plot(
+        #     np.arange(0, 2 * np.pi - self.params.angular_resolution,
+        #               self.params.angular_resolution), obstacle_histogram)
+        # plt.pause(0.001)
+
+        valleys = self.retrieve_valleys(obstacle_histogram)
+
+        print(f"Valleys: {valleys}\n")
+
+        target_angle = np.arctan2(goal_pos.y - vehicle_info.y,
+                                  goal_pos.x - vehicle_info.x) % (2 * np.pi)
+        target_sector = int(target_angle / self.params.angular_resolution)
+        candidates = self.retrieve_candidates(valleys, target_sector)
+        chosen_candidate = self.choose_candidate(candidates, target_sector)
+        dx, dy = self.calculate_movement_vec(chosen_candidate, dt_secs,
+                                             smooth_active[chosen_candidate],
+                                             goal_pos)
+
+        new_x = self.curr_pos.x + dx
+        new_y = self.curr_pos.y + dy
+        new_z = goal_pos.z
+        new_yaw = goal_pos.yaw
+        new_target = LocalCoordinates(new_x, new_y, new_z, new_yaw)
+        print(f"New target : {new_target}")
+        return new_target
 
 
 class VfhPlanner(Node):
@@ -292,9 +427,10 @@ class VfhPlanner(Node):
             self.get_logger().info('service not available, waiting again...')
 
         timer_period = 0.5
-        # self.timer_1 = self.create_timer(timer_period, self.controller_tick)
+        self.timer_1 = self.create_timer(timer_period, self.controller_tick)
         # self.goal_waypoint = LocalCoordinates(0.0, 10.0, -10.0)
-        self.timer_2 = self.create_timer(0.01, self.planner_tick_v3)
+        self.timer_2 = self.create_timer(timer_period / 2,
+                                         self.planner_tick_v3)
 
         self.planner = VfhAlgorithm()
 
@@ -305,195 +441,12 @@ class VfhPlanner(Node):
     def popleft_action(self):
         return self.popleft_action_client.call_async(self.action_req_req)
 
-    @staticmethod
-    def map(x, in_min, in_max, out_min, out_max):
-        return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
-
-    def sector_distance(self, s1, s2):
-        return min(abs(s1 - s2), abs(s1 - s2 + self.vfh_params.num_slots),
-                   abs(s1 - s2 - self.vfh_params.num_slots))
-
-    def planner_tick_v2(self):
-
-        if (self.vehicle_info is None or self.laser_scan is None):
-            return
-
-        if (self.goal_waypoint.distance_to_xyz(self.vehicle_info.x,
-                                               self.vehicle_info.y,
-                                               self.vehicle_info.z) < 0.5):
-            return
-
-        # populate histogram
-        histogram = np.full(self.vfh_params.num_slots,
-                            self.laser_scan.range_min)
-        yaw = self.vehicle_info.heading
-        for i, reading in enumerate(self.laser_scan.ranges):
-            # [0, 2*pi] angle for this reading
-            angle = ((self.laser_scan.angle_min +
-                      i * self.laser_scan.angle_increment) + yaw) % (2 * np.pi)
-            in_histogram_index = int(
-                VfhPlanner.map(angle, 0, 2 * np.pi, 0, len(histogram)))
-            reading = min(reading, self.laser_scan.range_max)
-            reading = max(reading, self.laser_scan.range_min)
-            histogram[in_histogram_index] = reading
-
-        distances = np.copy(histogram)
-        histogram = self.vfh_params.cert**2 * (
-            self.vfh_params.a - self.vfh_params.b * histogram**2)
-        # smoothing
-        smooth_histogram = np.zeros(len(histogram))
-        for i in range(len(histogram)):
-            angle_coverage = np.arctan2(self.vfh_params.robot_radius,
-                                        distances[i]) % (2 * np.pi)
-            min_angle = (i * self.laser_scan.angle_increment - angle_coverage)
-            max_angle = (i * self.laser_scan.angle_increment + angle_coverage)
-            index_angle = VfhPlanner.map(i, 0, len(histogram), 0, 2 * np.pi)
-            index_distance = distances[i]
-            for angle in np.arange(min_angle, max_angle,
-                                   self.laser_scan.angle_increment):
-                in_histogram_index = int(
-                    VfhPlanner.map(angle % (2 * np.pi), 0, 2 * np.pi, 0,
-                                   len(histogram)))
-                other_point_distance = distances[in_histogram_index]
-                p1 = LocalCoordinates(index_distance * np.cos(index_angle),
-                                      index_distance * np.sin(index_angle),
-                                      0.0)
-                p2 = LocalCoordinates(other_point_distance * np.cos(angle),
-                                      other_point_distance * np.sin(angle),
-                                      0.0)
-                if (p1.distance_to_xyz(p2.x, p2.y, p2.z)
-                        < self.vfh_params.robot_radius):
-                    smooth_histogram[i] += histogram[in_histogram_index]
-
-        # masking False if valley, True if obstacle
-        obstacle_histogram = np.copy(
-            self.vfh_params.binary_polar_histogram_n_m_1)
-        obstacle_histogram[smooth_histogram >
-                           self.vfh_params.threshold_high] = True
-        obstacle_histogram[smooth_histogram <
-                           self.vfh_params.threshold_low] = False
-        self.vfh_params.binary_polar_histogram_n_m_1 = np.copy(
-            obstacle_histogram)
-
-        # find valleys
-        valleys = []
-        valley_tmp = []
-        explored = 0
-        index = 0
-        # obstacles
-        self.get_logger().info("-" * 40 + "\n")
-        self.get_logger().warn(
-            f"thresholds: ({self.vfh_params.threshold_low}, {self.vfh_params.threshold_high})\n"
-        )
-        if (np.any(obstacle_histogram) and not np.all(obstacle_histogram)):
-            # walk backwards to find first hill
-            next_index = (index + 1) % len(obstacle_histogram)
-            while not (obstacle_histogram[index]
-                       and not obstacle_histogram[next_index]):
-                index = (index - 1) % len(obstacle_histogram)
-                next_index = (index + 1) % len(obstacle_histogram)
-
-            while explored < len(obstacle_histogram):
-                index = index % len(obstacle_histogram)
-                next_index = (index + 1) % len(obstacle_histogram)
-                if (obstacle_histogram[index]
-                        and not obstacle_histogram[next_index]):
-                    # adding the K_rights
-                    valley_tmp.append(next_index)
-                if (not obstacle_histogram[index]
-                        and obstacle_histogram[next_index]):
-                    # set k_left, reset k_tmp
-                    valley_tmp.append(next_index)
-                    valleys.append(valley_tmp)
-                    valley_tmp = []
-                index += 1
-                explored += 1
-        self.get_logger().warn(f"found valleys: {valleys}\n")
-
-        # get k_n
-        target_angle = np.arctan2(
-            self.goal_waypoint.y - self.vehicle_info.y,
-            self.goal_waypoint.x - self.vehicle_info.x) % (2 * np.pi)
-
-        k_targ = int(
-            VfhPlanner.map(target_angle, 0, 2 * np.pi, 0,
-                           len(obstacle_histogram)))
-        candidates = []
-        if (len(valleys) == 0):
-            candidates.append(k_targ)
-        for k_right, k_left in valleys:
-            if k_left < k_right:
-                k_left += len(obstacle_histogram)
-            distance = k_left - k_right
-            if (distance < self.vfh_params.s_max):
-                # narrow
-                candidates.append(
-                    ((k_right + k_left) // 2) % len(obstacle_histogram))
-            else:
-                # wide
-                c_r = (k_right +
-                       self.vfh_params.s_max // 2) % len(obstacle_histogram)
-                c_l = (k_left -
-                       self.vfh_params.s_max // 2) % len(obstacle_histogram)
-                candidates.append(c_r)
-                candidates.append(c_l)
-                if (c_l < c_r):
-                    # Wrap issue
-                    if not (c_l <= k_targ <= c_r):
-                        c_t = k_targ
-                        candidates.append(c_t)
-                else:
-                    # no wrap issue
-                    if (c_r <= k_targ <= c_l):
-                        c_t = k_targ
-                        candidates.append(c_t)
-        self.get_logger().warn(f"Candidates : {candidates}\n")
-        cost = []
-        for candidate in candidates:
-            cost_tmp = self.vfh_params.mu_target_diff * self.sector_distance(
-                candidate, k_targ)
-            if self.vfh_params.last_steering_dir is not None:
-                cost_tmp += self.vfh_params.mu_steering_diff * self.sector_distance(
-                    candidate, self.vfh_params.last_steering_dir)
-            cost.append(cost_tmp)
-        min_cost = np.min(cost)
-        index = cost.index(min_cost)
-        k_steer = candidates[index]
-        self.vfh_params.last_steering_dir = k_steer
-
-        angle_steer = VfhPlanner.map(k_steer, 0, len(obstacle_histogram), 0,
-                                     2 * np.pi)
-
-        seconds = self.timer_2.timer_period_ns * 1e-9
-        h_p_c = smooth_histogram[k_steer]
-        h_pp_c = min(h_p_c, self.vfh_params.h_m)
-        v_p = self.vfh_params.v_max * (1 - h_pp_c / self.vfh_params.h_m)
-        speed_step = v_p * seconds
-        dist_step = self.goal_waypoint.distance_to_xyz(self.vehicle_info.x,
-                                                       self.vehicle_info.y,
-                                                       self.goal_waypoint.z)
-        step_size = min(speed_step, dist_step)
-
-        new_x = self.vehicle_info.x + step_size * np.cos(angle_steer)
-        new_y = self.vehicle_info.y + step_size * np.sin(angle_steer)
-
-        self.target_waypoint.x = new_x
-        self.target_waypoint.y = new_y
-        self.target_waypoint.z = self.goal_waypoint.z
-        self.target_waypoint.yaw = target_angle
-
-        self.get_logger().warn(
-            f"new target: ({self.target_waypoint.x:.4f}, {self.target_waypoint.y:.4f}, {self.target_waypoint.z:.4f})"
-        )
-        self.get_logger().warn(
-            f"\n\tk_targ : {k_targ},\t k_steer: {k_steer}\n")
-
     def planner_tick_v3(self):
         if (self.vehicle_info is None or self.laser_scan is None):
             return
-        target = self.planner.generate_target(self.goal_waypoint,
-                                              self.vehicle_info,
-                                              self.laser_scan)
+        self.target_waypoint = self.planner.generate_target(
+            self.goal_waypoint, self.vehicle_info, self.laser_scan,
+            self.timer_2.timer_period_ns * 1e-9)
 
     @staticmethod
     def target_match_action(target: LocalCoordinates, msg: Action):
@@ -530,6 +483,11 @@ class VfhPlanner(Node):
               != Action.ACTION_TAKE_OFF and
               self.vehicle_info.curr_action_obj.action != Action.ACTION_LAND):
             # This should be the part of the code that does obstacle avoidance and publishes action
+            if (self.goal_waypoint.distance_to_xyz(self.target_waypoint.x,
+                                                   self.target_waypoint.y,
+                                                   self.target_waypoint.z)
+                    <= 0.2):
+                return
 
             if (not VfhPlanner.target_match_action(
                     self.target_waypoint, self.vehicle_info.curr_action_obj)):
@@ -538,11 +496,11 @@ class VfhPlanner(Node):
                 action.x = self.target_waypoint.x
                 action.y = self.target_waypoint.y
                 action.z = self.target_waypoint.z
-                action.yaw = self.target_waypoint.yaw
+                # action.yaw = self.target_waypoint.yaw
 
-                # action.yaw = np.arctan2(
-                #     self.goal_waypoint.y - self.vehicle_info.y,
-                #     self.goal_waypoint.x - self.vehicle_info.x) % (2 * np.pi)
+                action.yaw = np.arctan2(
+                    self.goal_waypoint.y - self.vehicle_info.y,
+                    self.goal_waypoint.x - self.vehicle_info.x) % (2 * np.pi)
                 self.send_action(action)
             if (self.vehicle_info.curr_action_obj.action != Action.ACTION_NONE
                     and not VfhPlanner.target_match_action(
