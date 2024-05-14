@@ -16,7 +16,9 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 from sensor_msgs.msg import LaserScan
+
 plt.ion()
+
 
 class LocalCoordinates:
 
@@ -50,7 +52,9 @@ class Obstacle:
         print("AHHH LEAVE ME ALONE AM AN ABSTRACT CLASS !!!")
         return False
 
+
 class Monolithe(Obstacle):
+
     def __init__(self, center_x, center_y, width, depth) -> None:
         super().__init__()
         self.center_x, self.center_y = (center_x, center_y)
@@ -59,7 +63,6 @@ class Monolithe(Obstacle):
     def contains(self, x, y):
         return (self.center_x - self.width / 2) <= x <= (self.center_x + self.width / 2) \
             and (self.center_y - self.depth / 2) <= y <= (self.center_y + self.depth / 2)
-    
 
 
 class VfhParam:
@@ -69,14 +72,14 @@ class VfhParam:
             angular_resolution=0.0872664,  # 5 degrees, but in radians
             a=0,
             b=1,
-            robot_radius=1.0,
+            robot_radius=2.0,
             threshold_low=5,
             threshold_high=20,
             s_max=16,
             v_max=5,
             mu_1=5,
             mu_2=1,
-            mu_3=2,
+            mu_3=3,
             h_m=10):
         self.angular_resolution = angular_resolution
         self.num_slots = int(np.pi * 2 / angular_resolution)
@@ -92,7 +95,7 @@ class VfhParam:
         self.s_max = s_max
         self.mu_target_diff = mu_1
         self.mu_steering_diff = mu_2
-        self.mu_valley_width = mu_3 
+        self.mu_valley_width = mu_3
         self.last_steering_dir = None
 
         self.v_max = v_max
@@ -123,18 +126,19 @@ class VfhAlgorithm:
         self.active_region_width = int(active_region_size / cell_size)
         self.params.adapt(self.active_region_width)
         # grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
-        self.fig, ((self.ax, self.ax2), (self.ax3, self.ax4)) = plt.subplots(2, 2)
+        self.fig, ((self.ax, self.ax2), (self.ax3,
+                                         self.ax4)) = plt.subplots(2, 2)
         # self.fig.canvas.draw_idle()
         # self.fig.canvas.start_event_loop(0.001)
         self.last_time = None
         # self.ax_img = self.ax.imshow(self.plane_hist.T, cmap='hot')
         # self.ax.invert_yaxis()self.ax.plot(
-    
+
     @staticmethod
     def quat_conjugate(q):
         quat = np.array([q[0], *(-np.array(q[1:]))])
         return quat / np.linalg.norm(quat)
-    
+
     def quat_apply(self, v):
 
         def quat_mult(q1, q2):
@@ -145,8 +149,6 @@ class VfhAlgorithm:
             left = a * b - np.dot(u, v)
             right = a * v + b * u + np.cross(u, v)
             return [left, *right]
-
-
 
         v_quat = [0, *v]
         q_cong = self.quat_conjugate(self.q)
@@ -191,7 +193,7 @@ class VfhAlgorithm:
                      index * msg.angle_increment) % (2 * np.pi)
             reading_vec = distance * (np.cos(angle) * i_trans + np.sin(angle) * j_trans)\
                 + np.array([0, 0, self.curr_pos.z])
-            
+
             dx, dy = reading_vec[0], reading_vec[1]
             if (abs(reading_vec[2]) <= 1.0):
                 print("GROUND DETECTED!", end=" ")
@@ -213,7 +215,7 @@ class VfhAlgorithm:
                 # cert = distance_cert
                 self.plane_hist[x, y] += distance_cert
                 # self.plane_hist[x, y] += 1
-        
+
         self.plane_hist[self.plane_hist > max_val] = max_val
 
     def update_position(self, msg: VehicleInfo):
@@ -380,7 +382,6 @@ class VfhAlgorithm:
                 cost_tmp += self.params.mu_valley_width \
                     * 1 / (1 + self.sector_r_l_distance(candidate_origins[index][0], candidate_origins[index][1]))
 
-
             cost.append(cost_tmp)
         min_cost = np.min(cost)
         index = cost.index(min_cost)
@@ -414,7 +415,7 @@ class VfhAlgorithm:
         step_size = min(20, dist_step)
 
         return step_size * np.cos(angle), step_size * np.sin(angle), v_p
-    
+
     def add_obstacles_to_region(self, region: np.ndarray, obstacles):
         N, M = region.shape
         res = region.copy()
@@ -423,15 +424,14 @@ class VfhAlgorithm:
                 dx = x - N // 2
                 dy = y - M // 2
                 dx, dy = dx * self.cell_size, dy * self.cell_size
-                real_x = self.curr_pos.x + dx 
+                real_x = self.curr_pos.x + dx
                 real_y = self.curr_pos.y + dy
                 for obstacle in obstacles:
                     if (obstacle.contains(real_x, real_y)):
                         res[x][y] = 1
         return res
 
-
-    def generate_target(self, goal_pos: LocalCoordinates12,
+    def generate_target(self, goal_pos: LocalCoordinates,
                         vehicle_info: VehicleInfo, obstacles: list[Obstacle],
                         dt_secs: float):
         self.update_position(vehicle_info)
@@ -447,7 +447,8 @@ class VfhAlgorithm:
         # self.ax.invert_yaxis()
         # # plt.show()
         # plt.pause(0.001)
-        active_region_with_obstacles = self.add_obstacles_to_region(active_region, obstacles)
+        active_region_with_obstacles = self.add_obstacles_to_region(
+            active_region, obstacles)
         smooth_active = self.generate_smooth(active_region_with_obstacles)
         obstacle_histogram = self.generate_masked_histogram(smooth_active)
 
@@ -471,20 +472,26 @@ class VfhAlgorithm:
         target_angle = np.arctan2(goal_pos.y - vehicle_info.y,
                                   goal_pos.x - vehicle_info.x) % (2 * np.pi)
         target_to_print_angle = np.arctan2(goal_pos.y - vehicle_info.y,
-                                goal_pos.x - vehicle_info.x)
+                                           goal_pos.x - vehicle_info.x)
         if (valleys is None):
-            return LocalCoordinates(self.curr_pos.x, self.curr_pos.y, self.curr_pos.z, )
+            return LocalCoordinates(
+                self.curr_pos.x,
+                self.curr_pos.y,
+                self.curr_pos.z,
+            )
         # if (VfhPlanner.angle_dist(target_angle,vehicle_info.heading % (2 * np.pi)) >= np.pi / 4):
         #     print(f"\t\ttarget angle: {target_to_print_angle}, curr angle: {vehicle_info.heading}")
         target_sector = int(target_angle / self.params.angular_resolution)
-        candidates, candidate_origin = self.retrieve_candidates(valleys, target_sector)
-        chosen_candidate = self.choose_candidate(candidates, candidate_origin, target_sector)
+        candidates, candidate_origin = self.retrieve_candidates(
+            valleys, target_sector)
+        chosen_candidate = self.choose_candidate(candidates, candidate_origin,
+                                                 target_sector)
         print(f"Candidates : {candidates}")
         print(f"Candidate : {chosen_candidate}")
         print(f"Target : {target_sector}")
-        dx, dy, v_p = self.calculate_movement_vec(chosen_candidate, dt_secs,
-                                             smooth_active[chosen_candidate],
-                                             goal_pos)
+        dx, dy, v_p = self.calculate_movement_vec(
+            chosen_candidate, dt_secs, smooth_active[chosen_candidate],
+            goal_pos)
 
         new_x = self.curr_pos.x + dx
         new_y = self.curr_pos.y + dy
@@ -556,7 +563,7 @@ class VfhPlanner(Node):
     def angle_dist(ang1, ang2):
         a = ang2 - ang1
         return abs(((a + np.pi) % (2 * np.pi)) - np.pi)
-    
+
     def planner_tick_v3(self):
         if (self.vehicle_info is None or self.laser_scan is None
                 or self.goal_waypoint is None):
