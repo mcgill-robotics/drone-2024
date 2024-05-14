@@ -43,11 +43,12 @@ class OffboardControl(Node):
                              y=None,
                              z=None,
                              yaw=None,
+                             max_speed_h=None,
                              action=None) -> "OffboardControl.Action":
             if (action_type == Action.ACTION_TAKE_OFF):
                 return OffboardControl.TakeOff(action)
             elif (action_type == Action.ACTION_WAYPOINT):
-                return OffboardControl.Waypoint(x, y, z, yaw, action)
+                return OffboardControl.Waypoint(x, y, z, yaw, max_speed_h, action)
             elif (action_type == Action.ACTION_LAND):
                 return OffboardControl.Landing(action)
             else:
@@ -64,16 +65,17 @@ class OffboardControl(Node):
 
     class Waypoint(Action):
 
-        def __init__(self, x, y, z, yaw, action: Action) -> None:
+        def __init__(self, x, y, z, yaw, max_speed_h, action: Action) -> None:
             super().__init__(f"Waypoint to ({x}, {y}, {z})",
                              Action.ACTION_WAYPOINT, action)
             self.x = x
             self.y = y
             self.z = z
             self.yaw = yaw
+            self.max_speed_h = max_speed_h
 
         def perform(self, offboard_object: "OffboardControl"):
-            offboard_object.waypoint(self.x, self.y, self.z, self.yaw)
+            offboard_object.waypoint(self.x, self.y, self.z, self.yaw, self.max_speed_h)
 
     class Landing(Action):
 
@@ -150,7 +152,7 @@ class OffboardControl(Node):
             self.popleft_action_callback)
 
         # publishers timing
-        timer_period = 0.1
+        timer_period = 0.05
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
         self.action_queue: Deque[OffboardControl.Action] = collections.deque(
@@ -294,7 +296,7 @@ class OffboardControl(Node):
         """
         return 3.
 
-    def waypoint(self, x, y, z, yaw):
+    def waypoint(self, x, y, z, yaw, max_speed_h):
         """
             Waypoint action, only completes when within current_tolarance from the target waypoint
         """
@@ -303,6 +305,11 @@ class OffboardControl(Node):
         if (yaw is not None):
             trajectorySetpoint.flag_control_heading = True
             trajectorySetpoint.heading = yaw
+            trajectorySetpoint.flag_set_max_heading_rate =  True
+            trajectorySetpoint.max_heading_rate = 0.78539816339 / 8 # (pi / 4) rad / s 
+        if (max_speed_h is not None):
+            trajectorySetpoint.flag_set_max_horizontal_speed = True
+            trajectorySetpoint.max_horizontal_speed = max_speed_h
         self.goto_setpoint_pub.publish(trajectorySetpoint)
         # if (((self.vehicle_local_position.x - x)**(2) +
         #      (self.vehicle_local_position.y - y)**(2) +
@@ -342,7 +349,7 @@ class OffboardControl(Node):
     def enqueue_action_callback(self, req, res):
         action = OffboardControl.Action.construct_action(
             req.action.action, req.action.x, req.action.y, req.action.z,
-            req.action.yaw, req.action)
+            req.action.yaw, req.action.max_speed_h, req.action)
         self.action_queue.append(action)
         res.success = True
         return res
@@ -357,6 +364,7 @@ class OffboardControl(Node):
         res.action.y = action.y
         res.action.z = action.z
         res.action.yaw = action.yaw
+        res.action.max_speed_h = action.max_speed_h 
         return res
 
 

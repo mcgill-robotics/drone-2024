@@ -1,6 +1,7 @@
 from custom_msgs.msg import VehicleInfo
 import time
 from custom_msgs.msg import Action
+import matplotlib
 import matplotlib.pyplot as plt
 from custom_msgs.msg import Waypoint
 from custom_msgs.srv import SendAction
@@ -15,15 +16,16 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 from sensor_msgs.msg import LaserScan
-
+plt.ion()
 
 class LocalCoordinates:
 
-    def __init__(self, x=0.0, y=0.0, z=0.0, yaw=0.0):
+    def __init__(self, x=0.0, y=0.0, z=0.0, yaw=0.0, max_speed_h=0.0):
         self.x = x
         self.y = y
         self.z = z
         self.yaw = yaw
+        self.max_speed_h = max_speed_h
 
     def set_xyz(self, msg: Waypoint):
         self.x = msg.x
@@ -42,6 +44,24 @@ class LocalCoordinates:
         return ((self.x - x)**2 + (self.y - y)**2 + (self.z - z)**2)**(1 / 2)
 
 
+class Obstacle:
+
+    def contains(self, x, y):
+        print("AHHH LEAVE ME ALONE AM AN ABSTRACT CLASS !!!")
+        return False
+
+class Monolithe(Obstacle):
+    def __init__(self, center_x, center_y, width, depth) -> None:
+        super().__init__()
+        self.center_x, self.center_y = (center_x, center_y)
+        self.width, self.depth = (width, depth)
+
+    def contains(self, x, y):
+        return (self.center_x - self.width / 2) <= x <= (self.center_x + self.width / 2) \
+            and (self.center_y - self.depth / 2) <= y <= (self.center_y + self.depth / 2)
+    
+
+
 class VfhParam:
 
     def __init__(
@@ -49,14 +69,15 @@ class VfhParam:
             angular_resolution=0.0872664,  # 5 degrees, but in radians
             a=0,
             b=1,
-            robot_radius=2.0,
-            threshold_low=100,
-            threshold_high=500,
+            robot_radius=1.0,
+            threshold_low=5,
+            threshold_high=20,
             s_max=16,
-            v_max=10,
-            mu_1=3,
-            mu_2=2,
-            h_m=1200):
+            v_max=5,
+            mu_1=5,
+            mu_2=1,
+            mu_3=2,
+            h_m=10):
         self.angular_resolution = angular_resolution
         self.num_slots = int(np.pi * 2 / angular_resolution)
         # Set a and b such that a - b * (range_max) =  0, with a, b > 0
@@ -71,6 +92,7 @@ class VfhParam:
         self.s_max = s_max
         self.mu_target_diff = mu_1
         self.mu_steering_diff = mu_2
+        self.mu_valley_width = mu_3 
         self.last_steering_dir = None
 
         self.v_max = v_max
@@ -101,11 +123,18 @@ class VfhAlgorithm:
         self.active_region_width = int(active_region_size / cell_size)
         self.params.adapt(self.active_region_width)
         # grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
-        self.fig, (self.ax, self.ax2) = plt.subplots(1, 2)
+        self.fig, ((self.ax, self.ax2), (self.ax3, self.ax4)) = plt.subplots(2, 2)
+        # self.fig.canvas.draw_idle()
+        # self.fig.canvas.start_event_loop(0.001)
         self.last_time = None
         # self.ax_img = self.ax.imshow(self.plane_hist.T, cmap='hot')
         # self.ax.invert_yaxis()self.ax.plot(
-
+    
+    @staticmethod
+    def quat_conjugate(q):
+        quat = np.array([q[0], *(-np.array(q[1:]))])
+        return quat / np.linalg.norm(quat)
+    
     def quat_apply(self, v):
 
         def quat_mult(q1, q2):
@@ -117,11 +146,10 @@ class VfhAlgorithm:
             right = a * v + b * u + np.cross(u, v)
             return [left, *right]
 
-        def quat_conjugate(q):
-            return [q[0], *(-np.array(q[1:]))]
+
 
         v_quat = [0, *v]
-        q_cong = quat_conjugate(self.q)
+        q_cong = self.quat_conjugate(self.q)
         tmp = quat_mult(v_quat, q_cong)
         tmp = quat_mult(self.q, tmp)
         return tmp[1:]
@@ -135,7 +163,7 @@ class VfhAlgorithm:
         return False
 
     @staticmethod
-    def reverse_sigmoid(x, spread=1, offset=10):
+    def reverse_sigmoid(x, spread=1, offset=10.):
         denom = 1 + np.power(np.e, -spread * (x - offset))
         return -1 / denom + 1
 
@@ -143,13 +171,16 @@ class VfhAlgorithm:
         # Not ready to interpret readings
         if (not self.is_valid_quat(self.q)):
             return
-        std_normal = [0, 0, 1]
-        normal = np.array(self.quat_apply(std_normal))
-        normal = normal / np.linalg.norm(normal)
         # print(f"Current reading certainty: {normal_diff_cert}")
-
+        max_val = 5
         self.plane_hist -= 0.75
         self.plane_hist[self.plane_hist < 0] = 0
+        i_vec = [1, 0, 0]
+        j_vec = [0, 1, 0]
+        i_trans = np.array(self.quat_apply(i_vec))
+        i_trans = i_trans / np.linalg.norm(i_trans)
+        j_trans = np.array(self.quat_apply(j_vec))
+        j_trans = j_trans / np.linalg.norm(j_trans)
         for index, distance in enumerate(msg.ranges):
             if not (msg.range_min <= distance <= msg.range_max):
                 continue
@@ -158,22 +189,21 @@ class VfhAlgorithm:
             # distance = distance * abs(dot)
             angle = (abs(msg.angle_min) -
                      index * msg.angle_increment) % (2 * np.pi)
-            plane_dx = distance * np.cos(angle)
-            plane_dy = distance * np.sin(angle)
-            plane_dz = self.curr_pos.z
-            plane_vec = np.array([plane_dx, plane_dy, plane_dz])
-            transformed_vec = np.array(self.quat_apply(plane_vec))
-            dx, dy = transformed_vec[0], transformed_vec[1]
+            reading_vec = distance * (np.cos(angle) * i_trans + np.sin(angle) * j_trans)\
+                + np.array([0, 0, self.curr_pos.z])
+            
+            dx, dy = reading_vec[0], reading_vec[1]
+            if (abs(reading_vec[2]) <= 1.0):
+                print("GROUND DETECTED!", end=" ")
+                continue
             dx, dy = int(dx / self.cell_size), int(dy / self.cell_size)
             x, y = dx + self.plane_hist.shape[
                 0] // 2, dy + self.plane_hist.shape[1] // 2
             if not (0 <= x <= self.plane_hist.shape[0]) or not (
                     0 <= y <= self.plane_hist.shape[1]):
                 continue
-            if (self.plane_hist[x, y] <= 5):
-                height_diff = abs(self.curr_pos.z - transformed_vec[2])
-                if (height_diff >= 3 * abs(self.curr_pos.z) / 4):
-                    continue
+            if (self.plane_hist[x, y] <= max_val):
+                height_diff = abs(self.curr_pos.z - reading_vec[2])
                 height_cert = self.reverse_sigmoid(
                     height_diff, offset=abs(self.curr_pos.z) / 4)
                 distance_cert = self.reverse_sigmoid(distance,
@@ -183,6 +213,8 @@ class VfhAlgorithm:
                 # cert = distance_cert
                 self.plane_hist[x, y] += distance_cert
                 # self.plane_hist[x, y] += 1
+        
+        self.plane_hist[self.plane_hist > max_val] = max_val
 
     def update_position(self, msg: VehicleInfo):
         if (self.curr_pos is None):
@@ -248,7 +280,10 @@ class VfhAlgorithm:
         explored = 0
         index = 0
         # obstacles
-        if (np.any(obstacle_histogram) and not np.all(obstacle_histogram)):
+        if (np.all(obstacle_histogram)):
+            print("ERMMMM AM COOKED! [Walls surround the drone]")
+            return None
+        if (np.any(obstacle_histogram)):
             # walk backwards to find first hill
             next_index = (index + 1) % len(obstacle_histogram)
             while not (obstacle_histogram[index]
@@ -280,15 +315,17 @@ class VfhAlgorithm:
 
     # s1 -> s2 distance
     def sector_r_l_distance(self, r, l):
-        if (l > r):
+        if (l >= r):
             return l - r
-        return l + self.params.num_slots - r
+        return self.params.num_slots - self.sector_r_l_distance(l, r)
 
     def retrieve_candidates(self, valleys, target_sector):
         candidates = []
+        candidate_origin = []
         if (len(valleys) == 0):
             candidates.append(target_sector)
-            return candidates
+            candidate_origin.append(None)
+            return candidates, candidate_origin
         for k_right, k_left in valleys:
             distance = self.sector_r_l_distance(k_right, k_left)
             if (distance < self.params.s_max):
@@ -300,6 +337,7 @@ class VfhAlgorithm:
                     candidates.append(
                         ((k_left + self.params.num_slots + k_right) // 2) %
                         self.params.num_slots)
+                candidate_origin.append([k_right, k_left])
             else:
                 # wide
                 c_r = (k_right +
@@ -307,6 +345,8 @@ class VfhAlgorithm:
                 c_l = (k_left - self.params.s_max // 2) % self.params.num_slots
                 candidates.append(c_r)
                 candidates.append(c_l)
+                candidate_origin.append([k_right, k_left])
+                candidate_origin.append([k_right, k_left])
                 # if (c_l < c_r):
                 #     # Wrap issue
                 #     if not (c_l <= target_sector <= c_r):
@@ -315,26 +355,32 @@ class VfhAlgorithm:
                 #     # no wrap issue
                 #     if (c_r <= target_sector <= c_l):
                 #         candidates.append(target_sector)
-                # d_t_r = self.sector_distance(c_r, target_sector)
-                # d_t_l = self.sector_distance(target_sector, c_l)
-                # d_r_l = self.sector_distance(c_r, c_l)
-                # if (d_t_r + d_t_l <= d_r_l):
-                #     candidates.append(target_sector)
-                if (c_l > c_r and c_r <= target_sector <= c_l) or (
-                        c_l < c_r and c_r <= target_sector +
-                        self.params.num_slots <= c_l + self.params.num_slots):
+                d_r_t = self.sector_r_l_distance(c_r, target_sector)
+                d_t_l = self.sector_r_l_distance(target_sector, c_l)
+                d_r_l = self.sector_r_l_distance(c_r, c_l)
+                if (d_r_t + d_t_l <= d_r_l):
                     candidates.append(target_sector)
+                    candidate_origin.append([k_right, k_left])
+                # if (c_l > c_r and c_r <= target_sector <= c_l) or (
+                #         c_l < c_r and c_r <= target_sector +
+                #         self.params.num_slots <= c_l + self.params.num_slots):
+                #     candidates.append(target_sector)
 
-        return candidates
+        return candidates, candidate_origin
 
-    def choose_candidate(self, candidates, target_sector):
+    def choose_candidate(self, candidates, candidate_origins, target_sector):
         cost = []
-        for candidate in candidates:
+        for index, candidate in enumerate(candidates):
             cost_tmp = self.params.mu_target_diff * self.sector_distance(
                 candidate, target_sector)
             if self.params.last_steering_dir is not None:
                 cost_tmp += self.params.mu_steering_diff * self.sector_distance(
                     candidate, self.params.last_steering_dir)
+            if candidate_origins[index] is not None:
+                cost_tmp += self.params.mu_valley_width \
+                    * 1 / (1 + self.sector_r_l_distance(candidate_origins[index][0], candidate_origins[index][1]))
+
+
             cost.append(cost_tmp)
         min_cost = np.min(cost)
         index = cost.index(min_cost)
@@ -359,20 +405,37 @@ class VfhAlgorithm:
         print(f"ANGLE :{angle:.4f}, smoothed_value :{smoothed_value:.4f}")
         print(f"REDUCTION FACTOR FOR SPEED: {reduc*100:.4f}%")
         v_p = self.params.v_max * reduc
-        speed_step = v_p * self.get_time_diff(dt_secs)
+        # speed_step = v_p * self.get_time_diff(dt_secs)
 
         dist_step = goal_pos.distance_to_xyz(self.curr_pos.x, self.curr_pos.y,
                                              goal_pos.z)
 
-        step_size = min(speed_step, dist_step)
+        # step_size = min(speed_step, dist_step)
+        step_size = min(20, dist_step)
 
-        return step_size * np.cos(angle), step_size * np.sin(angle)
+        return step_size * np.cos(angle), step_size * np.sin(angle), v_p
+    
+    def add_obstacles_to_region(self, region: np.ndarray, obstacles):
+        N, M = region.shape
+        res = region.copy()
+        for x in range(N):
+            for y in range(M):
+                dx = x - N // 2
+                dy = y - M // 2
+                dx, dy = dx * self.cell_size, dy * self.cell_size
+                real_x = self.curr_pos.x + dx 
+                real_y = self.curr_pos.y + dy
+                for obstacle in obstacles:
+                    if (obstacle.contains(real_x, real_y)):
+                        res[x][y] = 1
+        return res
 
-    def generate_target(self, goal_pos: LocalCoordinates,
-                        vehicle_info: VehicleInfo, laser_scan: LaserScan,
+
+    def generate_target(self, goal_pos: LocalCoordinates12,
+                        vehicle_info: VehicleInfo, obstacles: list[Obstacle],
                         dt_secs: float):
         self.update_position(vehicle_info)
-        self.update_detections(laser_scan)
+        # self.update_detections(laser_scan)
         N, M = self.plane_hist.shape
         half_x = int(N / 2)
         half_y = int(M / 2)
@@ -384,38 +447,50 @@ class VfhAlgorithm:
         # self.ax.invert_yaxis()
         # # plt.show()
         # plt.pause(0.001)
-        smooth_active = self.generate_smooth(active_region)
+        active_region_with_obstacles = self.add_obstacles_to_region(active_region, obstacles)
+        smooth_active = self.generate_smooth(active_region_with_obstacles)
         obstacle_histogram = self.generate_masked_histogram(smooth_active)
 
-        # self.ax2.imshow(active_region.T, cmap='hot')
-        # self.ax2.invert_yaxis()
+        # self.ax4.imshow(self.plane_hist.T, cmap='hot')
+        # self.ax4.invert_yaxis()
+        # self.ax3.imshow(active_region_with_obstacles.T, cmap='hot')
+        # self.ax3.invert_yaxis()
+        # self.ax2.clear()
+        # self.ax2.plot(range(self.params.num_slots), smooth_active)
         # self.ax.clear()
         # self.ax.plot(
-        #     np.arange(0, 2 * np.pi - self.params.angular_resolution,
-        #               self.params.angular_resolution), obstacle_histogram)
-        # plt.pause(0.001)
-
+        #               range(self.params.num_slots),
+        #               obstacle_histogram)
+        #
+        # self.fig.canvas.draw_idle()
+        # self.fig.canvas.start_event_loop(0.001)
+        # #
         valleys = self.retrieve_valleys(obstacle_histogram)
 
         print(f"Valleys: {valleys}\n")
-
         target_angle = np.arctan2(goal_pos.y - vehicle_info.y,
                                   goal_pos.x - vehicle_info.x) % (2 * np.pi)
+        target_to_print_angle = np.arctan2(goal_pos.y - vehicle_info.y,
+                                goal_pos.x - vehicle_info.x)
+        if (valleys is None):
+            return LocalCoordinates(self.curr_pos.x, self.curr_pos.y, self.curr_pos.z, )
+        # if (VfhPlanner.angle_dist(target_angle,vehicle_info.heading % (2 * np.pi)) >= np.pi / 4):
+        #     print(f"\t\ttarget angle: {target_to_print_angle}, curr angle: {vehicle_info.heading}")
         target_sector = int(target_angle / self.params.angular_resolution)
-        candidates = self.retrieve_candidates(valleys, target_sector)
-        chosen_candidate = self.choose_candidate(candidates, target_sector)
+        candidates, candidate_origin = self.retrieve_candidates(valleys, target_sector)
+        chosen_candidate = self.choose_candidate(candidates, candidate_origin, target_sector)
         print(f"Candidates : {candidates}")
         print(f"Candidate : {chosen_candidate}")
         print(f"Target : {target_sector}")
-        dx, dy = self.calculate_movement_vec(chosen_candidate, dt_secs,
+        dx, dy, v_p = self.calculate_movement_vec(chosen_candidate, dt_secs,
                                              smooth_active[chosen_candidate],
                                              goal_pos)
 
         new_x = self.curr_pos.x + dx
         new_y = self.curr_pos.y + dy
         new_z = goal_pos.z
-        new_yaw = goal_pos.yaw
-        new_target = LocalCoordinates(new_x, new_y, new_z, new_yaw)
+        new_yaw = target_to_print_angle
+        new_target = LocalCoordinates(new_x, new_y, new_z, new_yaw, v_p)
         print(f"New target : {new_target}")
         return new_target
 
@@ -446,6 +521,7 @@ class VfhPlanner(Node):
         self.laser_scan_subscriber = self.create_subscription(
             LaserScan, "/laser_scan", self.laser_scan_callback, 10)
         self.laser_scan: LaserScan | None = None
+        self.latest_laser_scan: LaserScan | None = None
 
         self.enqueue_action_client = self.create_client(
             SendAction, "/px4_action_queue/append_action")
@@ -476,12 +552,24 @@ class VfhPlanner(Node):
     def popleft_action(self):
         return self.popleft_action_client.call_async(self.action_req_req)
 
+    @staticmethod
+    def angle_dist(ang1, ang2):
+        a = ang2 - ang1
+        return abs(((a + np.pi) % (2 * np.pi)) - np.pi)
+    
     def planner_tick_v3(self):
         if (self.vehicle_info is None or self.laser_scan is None
                 or self.goal_waypoint is None):
             return
+        obstacles = []
+        for i in range(3):
+            for j in range(3):
+                if (i == 1 and j == 1):
+                    continue
+                monolith = Monolithe(i * 10 - 10, j * 10 - 10, 1, 1)
+                obstacles.append(monolith)
         self.target_waypoint = self.planner.generate_target(
-            self.goal_waypoint, self.vehicle_info, self.laser_scan,
+            self.goal_waypoint, self.vehicle_info, obstacles,
             self.timer_2.timer_period_ns * 1e-9)
 
     @staticmethod
@@ -490,7 +578,9 @@ class VfhPlanner(Node):
         x_bool = abs(target.x - msg.x) < 1e-10
         y_bool = abs(target.y - msg.y) < 1e-10
         z_bool = abs(target.z - msg.z) < 1e-10
-        return command_bool and x_bool and y_bool and z_bool
+        yaw_bool = VfhPlanner.angle_dist(target.yaw, msg.yaw) < 1e-10
+        speed_bool = abs(target.max_speed_h - msg.max_speed_h) < 1e-10
+        return command_bool and x_bool and y_bool and z_bool and yaw_bool and speed_bool
 
     def controller_tick(self):
         # self.get_logger().info(
@@ -536,9 +626,9 @@ class VfhPlanner(Node):
                 action.z = self.target_waypoint.z
                 # action.yaw = self.target_waypoint.yaw
 
-                action.yaw = np.arctan2(
-                    self.goal_waypoint.y - self.vehicle_info.y,
-                    self.goal_waypoint.x - self.vehicle_info.x) % (2 * np.pi)
+                action.yaw = self.target_waypoint.yaw
+                action.max_speed_h = self.target_waypoint.max_speed_h
+                print(f"sending action {action}")
                 self.send_action(action)
             if (self.vehicle_info.curr_action_obj.action != Action.ACTION_NONE
                     and not VfhPlanner.target_match_action(
@@ -551,9 +641,10 @@ class VfhPlanner(Node):
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.vehicle_info = msg
+        self.laser_scan = self.latest_laser_scan
 
     def laser_scan_callback(self, msg: LaserScan):
-        self.laser_scan = msg
+        self.latest_laser_scan = msg
 
 
 def main(args=None):
