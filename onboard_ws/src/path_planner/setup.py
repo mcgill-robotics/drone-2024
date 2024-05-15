@@ -1,11 +1,11 @@
 from setuptools import find_packages, setup
 
 package_name = 'path_planner'
-
+submodule = 'path_planner/vfh_submodules'
 setup(
     name=package_name,
     version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    packages=[*find_packages(exclude=['test']), submodule],
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
