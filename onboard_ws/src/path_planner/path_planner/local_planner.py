@@ -72,15 +72,15 @@ class VfhParam:
             angular_resolution=0.0872664,  # 5 degrees, but in radians
             a=0,
             b=1,
-            robot_radius=2.0,
-            threshold_low=5,
-            threshold_high=20,
-            s_max=16,
-            v_max=5,
+            robot_radius=1.5,
+            threshold_low=200,
+            threshold_high=800,
+            s_max=20,
+            v_max=8,
             mu_1=5,
-            mu_2=1,
-            mu_3=3,
-            h_m=10):
+            mu_2=2,
+            mu_3=100,
+            h_m=700):
         self.angular_resolution = angular_resolution
         self.num_slots = int(np.pi * 2 / angular_resolution)
         # Set a and b such that a - b * (range_max) =  0, with a, b > 0
@@ -103,7 +103,7 @@ class VfhParam:
 
     def adapt(self, active_region_width):
         self.b = 0.001
-        self.a = self.b * ((active_region_width - 1) / 2)**2 + 1
+        self.a = self.b * ((2**(1 / 2)) * (active_region_width + 4) / 2)**2 + 1
 
 
 class VfhAlgorithm:
@@ -257,13 +257,20 @@ class VfhAlgorithm:
                     ## MAYDAY
                     gamma = np.pi
                 else:
-                    gamma = np.arcsin(self.params.robot_radius / dist *
-                                      self.cell_size)
+                    gamma = np.arcsin(self.params.robot_radius /
+                                      (dist * self.cell_size))
                 if (magn != 0):
                     # print(f"Found magnitude for {x}, {y}, {magn}")
                     for k in range(self.params.num_slots):
-                        if (angle - gamma <= k * self.params.angular_resolution
-                                <= angle + gamma):
+                        r = angle - gamma
+                        l = angle + gamma
+                        sec_angle = k * self.params.angular_resolution
+                        d_r_a = self.modulo_r_l_distance(
+                            r, sec_angle, 2 * np.pi)
+                        d_a_l = self.modulo_r_l_distance(
+                            sec_angle, l, 2 * np.pi)
+                        d_r_l = self.modulo_r_l_distance(r, l, 2 * np.pi)
+                        if (d_r_a + d_a_l <= d_r_l + 1e-10):
                             polar_histogram[k] += magn
                             # print(f"+1", end=" ")
                     # print("\n")
@@ -321,6 +328,13 @@ class VfhAlgorithm:
             return l - r
         return self.params.num_slots - self.sector_r_l_distance(l, r)
 
+    def modulo_r_l_distance(self, r, l, mod):
+        r = r % mod
+        l = l % mod
+        if (l >= r):
+            return l - r
+        return mod - self.modulo_r_l_distance(l, r, mod)
+
     def retrieve_candidates(self, valleys, target_sector):
         candidates = []
         candidate_origin = []
@@ -331,14 +345,10 @@ class VfhAlgorithm:
         for k_right, k_left in valleys:
             distance = self.sector_r_l_distance(k_right, k_left)
             if (distance < self.params.s_max):
+                d_r_l = self.sector_r_l_distance(k_right, k_left)
                 # narrow
-                if (k_left > k_right):
-                    candidates.append(
-                        ((k_right + k_left) // 2) % self.params.num_slots)
-                else:
-                    candidates.append(
-                        ((k_left + self.params.num_slots + k_right) // 2) %
-                        self.params.num_slots)
+                candidates.append(
+                    int((k_right + d_r_l / 2)) % self.params.num_slots)
                 candidate_origin.append([k_right, k_left])
             else:
                 # wide
@@ -349,24 +359,12 @@ class VfhAlgorithm:
                 candidates.append(c_l)
                 candidate_origin.append([k_right, k_left])
                 candidate_origin.append([k_right, k_left])
-                # if (c_l < c_r):
-                #     # Wrap issue
-                #     if not (c_l <= target_sector <= c_r):
-                #         candidates.append(target_sector)
-                # else:
-                #     # no wrap issue
-                #     if (c_r <= target_sector <= c_l):
-                #         candidates.append(target_sector)
                 d_r_t = self.sector_r_l_distance(c_r, target_sector)
                 d_t_l = self.sector_r_l_distance(target_sector, c_l)
                 d_r_l = self.sector_r_l_distance(c_r, c_l)
                 if (d_r_t + d_t_l <= d_r_l):
                     candidates.append(target_sector)
                     candidate_origin.append([k_right, k_left])
-                # if (c_l > c_r and c_r <= target_sector <= c_l) or (
-                #         c_l < c_r and c_r <= target_sector +
-                #         self.params.num_slots <= c_l + self.params.num_slots):
-                #     candidates.append(target_sector)
 
         return candidates, candidate_origin
 
@@ -380,14 +378,14 @@ class VfhAlgorithm:
                     candidate, self.params.last_steering_dir)
             if candidate_origins[index] is not None:
                 cost_tmp += self.params.mu_valley_width \
-                    * 1 / (1 + self.sector_r_l_distance(candidate_origins[index][0], candidate_origins[index][1]))
+                    * 1 / ( 1e-10 + self.sector_r_l_distance(candidate_origins[index][0], candidate_origins[index][1]))
 
             cost.append(cost_tmp)
         min_cost = np.min(cost)
         index = cost.index(min_cost)
         k_steer = candidates[index]
         self.params.last_steering_dir = k_steer
-        return k_steer
+        return k_steer, cost
 
     def get_time_diff(self, dt_secs):
         if (self.last_time is None):
@@ -449,22 +447,25 @@ class VfhAlgorithm:
         # plt.pause(0.001)
         active_region_with_obstacles = self.add_obstacles_to_region(
             active_region, obstacles)
+
+        self.plane_hist[half_x - half_width:half_x + half_width,
+                        half_y - half_width:half_y +
+                        half_width] = active_region_with_obstacles
+
         smooth_active = self.generate_smooth(active_region_with_obstacles)
         obstacle_histogram = self.generate_masked_histogram(smooth_active)
 
-        # self.ax4.imshow(self.plane_hist.T, cmap='hot')
-        # self.ax4.invert_yaxis()
-        # self.ax3.imshow(active_region_with_obstacles.T, cmap='hot')
-        # self.ax3.invert_yaxis()
-        # self.ax2.clear()
-        # self.ax2.plot(range(self.params.num_slots), smooth_active)
-        # self.ax.clear()
-        # self.ax.plot(
-        #               range(self.params.num_slots),
-        #               obstacle_histogram)
-        #
-        # self.fig.canvas.draw_idle()
-        # self.fig.canvas.start_event_loop(0.001)
+        self.ax4.imshow(self.plane_hist.T, cmap='hot')
+        self.ax4.invert_yaxis()
+        self.ax3.imshow(active_region_with_obstacles.T, cmap='hot')
+        self.ax3.invert_yaxis()
+        self.ax2.clear()
+        self.ax2.plot(range(self.params.num_slots), smooth_active)
+        self.ax.clear()
+        self.ax.plot(range(self.params.num_slots), obstacle_histogram)
+
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.start_event_loop(0.001)
         # #
         valleys = self.retrieve_valleys(obstacle_histogram)
 
@@ -484,9 +485,11 @@ class VfhAlgorithm:
         target_sector = int(target_angle / self.params.angular_resolution)
         candidates, candidate_origin = self.retrieve_candidates(
             valleys, target_sector)
-        chosen_candidate = self.choose_candidate(candidates, candidate_origin,
-                                                 target_sector)
+        chosen_candidate, costs = self.choose_candidate(
+            candidates, candidate_origin, target_sector)
         print(f"Candidates : {candidates}")
+        print(f"Candidate Costs: {costs}")
+        print(f"Candidates Origins : {candidate_origin}")
         print(f"Candidate : {chosen_candidate}")
         print(f"Target : {target_sector}")
         dx, dy, v_p = self.calculate_movement_vec(
