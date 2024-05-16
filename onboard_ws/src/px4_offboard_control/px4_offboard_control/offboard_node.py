@@ -10,6 +10,7 @@ from px4_msgs.msg import BatteryStatus
 from px4_msgs.msg import VehicleStatus
 from px4_msgs.msg import VehicleLocalPosition
 from px4_msgs.msg import VehicleAttitude
+from px4_msgs.msg import VehicleOdometry
 from custom_msgs.srv import RequestAction
 from custom_msgs.srv import SendAction
 from custom_msgs.msg import Action
@@ -129,6 +130,11 @@ class OffboardControl(Node):
             self.vehicle_attitude_callback, qos_profile)
         self.vehicle_attitude: VehicleAttitude | None = None
 
+        self.vehicle_odom_sub = self.create_subscription(
+            VehicleOdometry, '/fmu/out/vehicle_odometry', self.vehicle_odom_callback, qos_profile 
+        )
+        self.vehicle_odom: VehicleOdometry | None = None
+
         # PX4 PUBS
         self.offboard_mode_pub = self.create_publisher(
             OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
@@ -173,11 +179,13 @@ class OffboardControl(Node):
     def print_vehicle_info(self, info: VehicleInfo):
         dash_length = os.get_terminal_size()[0]
         string = "\n" + ('-' * dash_length) + "\n"
+        string += f"Time: {info.stamp}\n"
         string += f"(N, E, D): ({info.x:.4f}, {info.y:.4f}, {info.z:.4f})\n"
         string += f"(VN, VE, VD): ({info.vx:.4f}, {info.vy:.4f}, {info.vz:.4f})\n"
         string += f"heading: {info.heading}\n"
         string += f"(ref_lat, ref_lon, ref_alt): ({info.ref_lat:.4f}, {info.ref_lon:.4f}, {info.ref_alt:.4f})\n"
         string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
+        string += f"angular_velocity: ({info.angular_velocity[0]:.4f}, {info.angular_velocity[1]:.4f}, {info.angular_velocity[2]:.4f})\n"
         string += f"power level: {info.powerlevel:.2f}%\t"
         mode_string = "Armed" if info.arming_state == VehicleInfo.ARMING_STATE_ARMED else "Disarmed"
         string += f"arming state: {info.arming_state}, {mode_string}\n"
@@ -187,6 +195,7 @@ class OffboardControl(Node):
 
     def vehicle_info_publish(self):
         vehicle_info = VehicleInfo()
+        vehicle_info.stamp = self.get_clock().now().to_msg()
 
         # position and velocity
         if (self.vehicle_local_position is not None):
@@ -207,6 +216,8 @@ class OffboardControl(Node):
         # Attitude
         if (self.vehicle_attitude is not None):
             vehicle_info.q = self.vehicle_attitude.q
+        if (self.vehicle_odom is not None):
+            vehicle_info.angular_velocity = self.vehicle_odom.angular_velocity
         # mode
         if (self.vehicle_status is not None):
             vehicle_info.arming_state = self.vehicle_status.arming_state
@@ -305,8 +316,8 @@ class OffboardControl(Node):
         if (yaw is not None):
             trajectorySetpoint.flag_control_heading = True
             trajectorySetpoint.heading = yaw
-            trajectorySetpoint.flag_set_max_heading_rate =  True
-            trajectorySetpoint.max_heading_rate = 0.78539816339 / 8 # (pi / 4) rad / s 
+            # trajectorySetpoint.flag_set_max_heading_rate =  True
+            # trajectorySetpoint.max_heading_rate = 0.78539816339 / 8 # (pi / 4) rad / s 
         if (max_speed_h is not None):
             trajectorySetpoint.flag_set_max_horizontal_speed = True
             trajectorySetpoint.max_horizontal_speed = max_speed_h
@@ -345,6 +356,9 @@ class OffboardControl(Node):
 
     def vehicle_attitude_callback(self, msg: VehicleAttitude):
         self.vehicle_attitude = msg
+
+    def vehicle_odom_callback(self, msg: VehicleOdometry):
+        self.vehicle_odom = msg
 
     def enqueue_action_callback(self, req, res):
         action = OffboardControl.Action.construct_action(

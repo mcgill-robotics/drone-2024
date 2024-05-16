@@ -1,3 +1,5 @@
+builtin_interfaces/Time stamp
+
 float64 x
 float64 y
 float64 z
@@ -13,6 +15,7 @@ float64 ref_alt
 float64 heading
 
 float32[4] q
+float32[3] angular_velocity
 
 uint32 arming_state
 uint8 ARMING_STATE_DISARMED = 1
