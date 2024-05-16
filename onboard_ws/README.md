@@ -5,4 +5,5 @@ If you're using a c++ language server that is compatible with the `compile_comma
 ## Topic monitoring through network
 Make sure to disable the firewall on both devices and either dont have `ROS_DOMAIN_ID` environment variable set or have both devices share the same value for that variable
 ## PS
-Drone ssh port is `33556`, currently address `192.168.0.5`, user `drone`.
+Drone ssh port is `33556`, currently address `192.168.0.5`, user `drone` if using the TPlink.
+Drone ssh port is `33556`, currently address `172.20.10.10`, user `drone` if using Imad's hotspot.
