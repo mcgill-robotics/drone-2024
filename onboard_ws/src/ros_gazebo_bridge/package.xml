@@ -11,7 +11,6 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
-  <depend>gz-transport12</depend>
   <depend>sensor_msgs</depend>
   <depend>px4_msgs</depend>
   <depend>geometry_msgs</depend>

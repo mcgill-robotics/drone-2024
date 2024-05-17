@@ -1,5 +1,4 @@
 float64 x
 float64 y
 float64 z
----
-bool success
+float64 max_speed_h

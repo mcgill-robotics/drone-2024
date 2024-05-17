@@ -17,22 +17,18 @@ then
         tmux split-window -t "$SESSION:$window" -t 0
         tmux split-window -t "$SESSION:$window" -t 0 -h
         tmux split-window -t "$SESSION:$window" -t 2 -h
-        tmux split-window -t "$SESSION:$window" -t 2 
 
-        tmux send-keys -t "$SESSION:$window" -t 0 'cd' enter 'cd PX4-Autopilot' enter
-        tmux send-keys -t "$SESSION:$window" -t 0 'make px4_sitl gz_x500' enter
+        tmux send-keys -t "$SESSION:$window" -t 0 'source ../install/setup.bash' enter
+        tmux send-keys -t "$SESSION:$window" -t 0 'ros2 launch urg_node2 urg_node2.launch.py' enter
 
-        tmux send-keys -t "$SESSION:$window" -t 1 'MicroXRCEAgent udp4 -p 8888' enter
+        tmux send-keys -t "$SESSION:$window" -t 1 'sudo MicroXRCEAgent serial --dev /dev/serial0 -b 921600' enter
 
         tmux send-keys -t "$SESSION:$window" -t 2 'source ../install/setup.bash' enter
         tmux send-keys -t "$SESSION:$window" -t 2 'ros2 run px4_offboard_control offboard_node' enter
 
         tmux send-keys -t "$SESSION:$window" -t 3 'source ../install/setup.bash' enter
-        tmux send-keys -t "$SESSION:$window" -t 3 'ros2 run ros_gazebo_bridge lidar_bridge' enter
+        tmux send-keys -t "$SESSION:$window" -t 3 'ros2 run path_planner local_planner' enter
 
-
-        tmux send-keys -t "$SESSION:$window" -t 4 'source ../install/setup.bash' enter
-        tmux send-keys -t "$SESSION:$window" -t 4 'ros2 run path_planner local_planner' enter
 fi
 # Attach Session, on the Main window
 tmux attach-session -t $SESSION
