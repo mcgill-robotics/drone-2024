@@ -87,7 +87,10 @@ class VfhPlanner(Node):
         return abs(((a + np.pi) % (2 * np.pi)) - np.pi)
 
     def planner_tick_v3(self):
-        if (self.vehicle_info is None or self.laser_scan is None
+        # if (self.vehicle_info is None or self.laser_scan is None
+        #         or self.goal_waypoint is None):
+        #     return
+        if (self.vehicle_info is None
                 or self.goal_waypoint is None):
             return
         self.target_waypoint = self.planner.generate_target(

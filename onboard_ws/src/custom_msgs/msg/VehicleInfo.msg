@@ -8,6 +8,10 @@ float64 vx
 float64 vy
 float64 vz
 
+float64 ax
+float64 ay
+float64 az
+
 float64 ref_lat
 float64 ref_lon
 float64 ref_alt

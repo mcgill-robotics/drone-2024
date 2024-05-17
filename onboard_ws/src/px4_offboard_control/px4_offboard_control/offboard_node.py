@@ -182,6 +182,7 @@ class OffboardControl(Node):
         string += f"Time: {info.stamp}\n"
         string += f"(N, E, D): ({info.x:.4f}, {info.y:.4f}, {info.z:.4f})\n"
         string += f"(VN, VE, VD): ({info.vx:.4f}, {info.vy:.4f}, {info.vz:.4f})\n"
+        string += f"(AN, AE, AD): ({info.ax:.4f}, {info.ay:.4f}, {info.az:.4f})\n"
         string += f"heading: {info.heading}\n"
         string += f"(ref_lat, ref_lon, ref_alt): ({info.ref_lat:.4f}, {info.ref_lon:.4f}, {info.ref_alt:.4f})\n"
         string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
@@ -206,6 +207,10 @@ class OffboardControl(Node):
             vehicle_info.vx = self.vehicle_local_position.vx
             vehicle_info.vy = self.vehicle_local_position.vy
             vehicle_info.vz = self.vehicle_local_position.vz
+
+            vehicle_info.ax = self.vehicle_local_position.ax
+            vehicle_info.ay = self.vehicle_local_position.ay
+            vehicle_info.az = self.vehicle_local_position.az
 
             vehicle_info.ref_lat = self.vehicle_local_position.ref_lat
             vehicle_info.ref_lon = self.vehicle_local_position.ref_lon

@@ -4,7 +4,7 @@ from custom_msgs.msg import VehicleInfo
 from sensor_msgs.msg import LaserScan
 from .geometry import *
 
-plt.ion()
+# plt.ion()
 
 
 class VfhParam:
@@ -22,7 +22,7 @@ class VfhParam:
             mu_1=5,
             mu_2=2,
             mu_3=2,
-            h_m=4):
+            h_m=4.5):
         self.angular_resolution = angular_resolution
         self.num_slots = int(np.pi * 2 / angular_resolution)
         # Set a and b such that a - b * (range_max) =  0, with a, b > 0
@@ -65,8 +65,8 @@ class VfhAlgorithm:
         self.cell_size = cell_size
         self.curr_pos: LocalCoordinates | None = None
         self.q: list[float] | None = None
-        self.active_region_width = int(active_region_size / cell_size)
-        self.params.adapt(self.active_region_width)
+        self.min_active_region_width = int(active_region_size / cell_size)
+        self.params.adapt(self.min_active_region_width)
         # grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
         self.fig, ((self.ax, self.ax2), (self.ax3,
                                          self.ax4)) = plt.subplots(2, 2)
@@ -171,6 +171,7 @@ class VfhAlgorithm:
         if (self.curr_pos is None):
             self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
             self.q = msg.q
+
         tx, ty = -int((msg.x - self.curr_pos.x) / self.cell_size), -int(
             (msg.y - self.curr_pos.y) / self.cell_size)
         N, M = self.plane_hist.shape
@@ -379,10 +380,13 @@ class VfhAlgorithm:
         return res
 
     def generate_target(self, goal_pos: LocalCoordinates,
-                        vehicle_info: VehicleInfo, laser_scan: LaserScan,
+                        vehicle_info: VehicleInfo,  laser_scan: LaserScan,
                         obstacles: list[Obstacle], dt_secs: float):
         self.update_position(vehicle_info)
-        self.update_detections(laser_scan)
+        # self.update_detections(laser_scan)
+        dist_from_goal = ((goal_pos.x - self.curr_pos.x)**2 + (goal_pos.y - self.curr_pos.y)**2)**(1/2) // self.cell_size 
+        self.active_region_width = min(self.min_active_region_width, max(dist_from_goal * 2 + 1, 3))
+        self.params.adapt(self.active_region_width)
         N, M = self.plane_hist.shape
         half_x = int(N / 2)
         half_y = int(M / 2)
@@ -397,24 +401,20 @@ class VfhAlgorithm:
         active_region_with_obstacles = self.add_obstacles_to_region(
             active_region, obstacles)
 
-        self.plane_hist[half_x - half_width:half_x + half_width,
-                        half_y - half_width:half_y +
-                        half_width] = active_region_with_obstacles
-
         smooth_active = self.generate_smooth(active_region_with_obstacles)
         obstacle_histogram = self.generate_masked_histogram(smooth_active)
 
-        self.ax4.imshow(self.plane_hist.T, cmap='hot')
-        self.ax4.invert_yaxis()
-        self.ax3.imshow(active_region_with_obstacles.T, cmap='hot')
-        self.ax3.invert_yaxis()
-        self.ax2.clear()
-        self.ax2.plot(range(self.params.num_slots), smooth_active)
-        self.ax.clear()
-        self.ax.plot(range(self.params.num_slots), obstacle_histogram)
-
-        self.fig.canvas.draw_idle()
-        self.fig.canvas.start_event_loop(0.001)
+        # self.ax4.imshow(self.plane_hist.T, cmap='hot')
+        # self.ax4.invert_yaxis()
+        # self.ax3.imshow(active_region_with_obstacles.T, cmap='hot')
+        # self.ax3.invert_yaxis()
+        # self.ax2.clear()
+        # self.ax2.plot(range(self.params.num_slots), smooth_active)
+        # self.ax.clear()
+        # self.ax.plot(range(self.params.num_slots), obstacle_histogram)
+        #
+        # self.fig.canvas.draw_idle()
+        # self.fig.canvas.start_event_loop(0.001)
         # #
         valleys = self.retrieve_valleys(obstacle_histogram)
 
