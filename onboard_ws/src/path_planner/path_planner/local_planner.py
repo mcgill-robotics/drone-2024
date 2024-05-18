@@ -90,8 +90,7 @@ class VfhPlanner(Node):
         # if (self.vehicle_info is None or self.laser_scan is None
         #         or self.goal_waypoint is None):
         #     return
-        if (self.vehicle_info is None
-                or self.goal_waypoint is None):
+        if (self.vehicle_info is None or self.goal_waypoint is None):
             return
         self.target_waypoint = self.planner.generate_target(
             self.goal_waypoint, self.vehicle_info, self.laser_scan,

@@ -49,7 +49,8 @@ class OffboardControl(Node):
             if (action_type == Action.ACTION_TAKE_OFF):
                 return OffboardControl.TakeOff(action)
             elif (action_type == Action.ACTION_WAYPOINT):
-                return OffboardControl.Waypoint(x, y, z, yaw, max_speed_h, action)
+                return OffboardControl.Waypoint(x, y, z, yaw, max_speed_h,
+                                                action)
             elif (action_type == Action.ACTION_LAND):
                 return OffboardControl.Landing(action)
             else:
@@ -76,7 +77,8 @@ class OffboardControl(Node):
             self.max_speed_h = max_speed_h
 
         def perform(self, offboard_object: "OffboardControl"):
-            offboard_object.waypoint(self.x, self.y, self.z, self.yaw, self.max_speed_h)
+            offboard_object.waypoint(self.x, self.y, self.z, self.yaw,
+                                     self.max_speed_h)
 
     class Landing(Action):
 
@@ -131,8 +133,8 @@ class OffboardControl(Node):
         self.vehicle_attitude: VehicleAttitude | None = None
 
         self.vehicle_odom_sub = self.create_subscription(
-            VehicleOdometry, '/fmu/out/vehicle_odometry', self.vehicle_odom_callback, qos_profile 
-        )
+            VehicleOdometry, '/fmu/out/vehicle_odometry',
+            self.vehicle_odom_callback, qos_profile)
         self.vehicle_odom: VehicleOdometry | None = None
 
         # PX4 PUBS
@@ -322,7 +324,7 @@ class OffboardControl(Node):
             trajectorySetpoint.flag_control_heading = True
             trajectorySetpoint.heading = yaw
             # trajectorySetpoint.flag_set_max_heading_rate =  True
-            # trajectorySetpoint.max_heading_rate = 0.78539816339 / 8 # (pi / 4) rad / s 
+            # trajectorySetpoint.max_heading_rate = 0.78539816339 / 8 # (pi / 4) rad / s
         if (max_speed_h is not None):
             trajectorySetpoint.flag_set_max_horizontal_speed = True
             trajectorySetpoint.max_horizontal_speed = max_speed_h
@@ -383,7 +385,7 @@ class OffboardControl(Node):
         res.action.y = action.y
         res.action.z = action.z
         res.action.yaw = action.yaw
-        res.action.max_speed_h = action.max_speed_h 
+        res.action.max_speed_h = action.max_speed_h
         return res
 
 
