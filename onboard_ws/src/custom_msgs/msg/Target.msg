@@ -3,6 +3,8 @@ uint32 target_type
 uint32 TARGET_TYPE_STANDARD = 1
 uint32 TARGET_TYPE_EMERGENT = 2
 
+uint32 target_hub 
+
 uint32 shape
 
 uint32 SHAPE_CIRCLE = 1 

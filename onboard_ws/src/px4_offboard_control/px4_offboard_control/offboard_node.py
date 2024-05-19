@@ -302,17 +302,14 @@ class OffboardControl(Node):
         # set wapoint to be up high
 
         trajectorySetpoint = GotoSetpoint()
-        trajectorySetpoint.position = [0.0, 0.0, target_height]
+        trajectorySetpoint.position = [
+            self.vehicle_local_position.x, self.vehicle_local_position.y,
+            target_height
+        ]
         self.goto_setpoint_pub.publish(trajectorySetpoint)
 
         if (abs(self.vehicle_local_position.z - target_height) <= 0.3):
             self.action_queue.popleft()
-
-    def current_tolerance(self):
-        """
-            defines the distance tolerances for Quad Copter configuartion
-        """
-        return 3.
 
     def waypoint(self, x, y, z, yaw, max_speed_h):
         """
@@ -323,17 +320,10 @@ class OffboardControl(Node):
         if (yaw is not None):
             trajectorySetpoint.flag_control_heading = True
             trajectorySetpoint.heading = yaw
-            # trajectorySetpoint.flag_set_max_heading_rate =  True
-            # trajectorySetpoint.max_heading_rate = 0.78539816339 / 8 # (pi / 4) rad / s
         if (max_speed_h is not None):
             trajectorySetpoint.flag_set_max_horizontal_speed = True
             trajectorySetpoint.max_horizontal_speed = max_speed_h
         self.goto_setpoint_pub.publish(trajectorySetpoint)
-        # if (((self.vehicle_local_position.x - x)**(2) +
-        #      (self.vehicle_local_position.y - y)**(2) +
-        #      (self.vehicle_local_position.z - z)**(2))**(1 / 2)
-        #         <= self.current_tolerance()):
-        #     self.action_queue.popleft()
 
     def land(self):
         """
