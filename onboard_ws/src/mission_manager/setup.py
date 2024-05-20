@@ -10,7 +10,6 @@ setup(
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/resource', ['sim_boundary.json']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
