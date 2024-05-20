@@ -1,8 +1,11 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.duration import Duration
 
 from std_msgs.msg import String
 from std_msgs.msg import Float32
+from std_msgs.msg import Int32
+from std_msgs.msg import Empty
 from custom_msgs.msg import Waypoint
 from custom_msgs.msg import Target
 from custom_msgs.msg import ListTargets
@@ -18,6 +21,11 @@ import pymap3d as pm
 
 
 class MissionNode(Node):
+    WAITING = 0
+    PERFORMIN_LAP = 1
+    SURVEY_AREA = 2
+    PERFORMING_AIRDROP = 3
+    RTH = 4
 
     def __init__(self):
         super().__init__('mission_node')
@@ -39,6 +47,11 @@ class MissionNode(Node):
             ListGlobalCoordinates, "/mission_boundary",
             self.mission_boundary_callback, self.qos_profile)
 
+        self.survey_zone_sub = self.create_subscription(
+            ListGlobalCoordinates, "/survey_zone", self.survey_zone_callback,
+            self.qos_profile)
+        self.survey_zone = None
+
         self.lap_points_sub = self.create_subscription(
             ListGlobalCoordinates, "/mission_lap", self.mission_lap_callback,
             self.qos_profile)
@@ -49,6 +62,13 @@ class MissionNode(Node):
             ListTargets, "/mission_targets", self.targets_callback,
             self.qos_profile)
         self.targets = None
+        self.targets_bool = None
+        self.curr_target_index = 0
+
+        self.target_location_sub = self.create_subscription(
+            Point32, "/target_location", self.target_location_callback,
+            self.qos_profile)
+        self.target_location: Point32 | None = None
 
         self.lap_tolerance_sub = self.create_subscription(
             Float32, "/mission_lap_tolerance", self.lap_tolerance_callback,
@@ -65,8 +85,24 @@ class MissionNode(Node):
                                                        "/goal_waypoint",
                                                        self.qos_profile)
 
+        self.curr_target_pub = self.create_publisher(Target, "/current_target",
+                                                     self.qos_profile)
+
+        self.airdrop_pub = self.create_publisher(Int32, "/drop_bottle", 10)
+
+        self.start_sub = self.create_subscription(Empty, "/start",
+                                                  self.start_callback,
+                                                  self.qos_profile)
+        self.state = MissionNode.WAITING
+
         timer_period = 0.5
-        self.timer_1 = self.create_timer(timer_period, self.perform_lap)
+        self.timer_1 = self.create_timer(timer_period, self.mission_tick)
+
+    def warn_pub(self, string):
+        self.get_logger().warn(string)
+        string_msg = String()
+        string_msg.data = f"State: {'WAITING' if self.state == self.WAITING else 'PERFORMING_LAP' if self.state == self.PERFORMING_LAP else 'SURVEY_AREA' if self.state == self.SURVER_AREA else 'PERFORMING_AIRDROP' if self.state == self.PERFORMING_AIRDROP else 'RTH'}, {string}"
+        self.mission_status_pub.publish(string_msg)
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.curr_n, self.curr_e, self.curr_d = msg.x, msg.y, msg.z
@@ -100,6 +136,19 @@ class MissionNode(Node):
 
         self.boundary_setter_pub.publish(polygon)
 
+    def survey_zone_callback(self, msg: ListGlobalCoordinates):
+        if self.lat0 is None:
+            self.warn_pub(
+                "Not quite ready to take in coordinates for survey zone, waiting on vehicle info..."
+            )
+            return
+        self.survey_zone = []
+        for glob in msg.coords:
+            glob: GlobalCoordinates = glob
+            n, e, d = self.get_ned(glob.latitude, glob.longitude,
+                                   glob.altitude)
+            self.survey_zone.append((n, e, d))
+
     def mission_lap_callback(self, msg: ListGlobalCoordinates):
         if self.lat0 is None:
             info_string = "Not quite ready to take in coordinates for laps, waiting on vehicle info..."
@@ -114,9 +163,15 @@ class MissionNode(Node):
             self.lap.append((n, e, d))
 
     def targets_callback(self, msg: ListTargets):
+        self.curr_target_index = 0
         self.targets = []
+        self.targets_bool = []
         for target in msg.targets:
             self.targets.append(target)
+            self.targets.append(False)
+
+    def target_location_callback(self, msg: Point32):
+        self.target_location = (msg.x, msg.y, msg.z)
 
     def lap_tolerance_callback(self, msg: Float32):
         if (msg.data <= 0.):
@@ -124,6 +179,10 @@ class MissionNode(Node):
                 "Lap tolerance must be a positive floating point number")
             return
         self.curr_tolerance = msg.data
+
+    def start_callback(self, msg: Empty):
+        if (self.state == self.WAITING):
+            self.state = self.PERFORMIN_LAP
 
     def distance_from_curr_lap_dest(self):
         target_n, target_e, target_d = self.lap[self.curr_lap_point_index]
@@ -146,8 +205,11 @@ class MissionNode(Node):
             return
 
         if (self.distance_from_curr_lap_dest() <= self.curr_tolerance):
+            if (self.curr_lap_point_index == len(self.lap) - 1):
+                self.state = self.SURVEY_AREA
             self.curr_lap_point_index = (self.curr_lap_point_index + 1) % len(
                 self.lap)
+            return
         msg = Waypoint()
         (n, e, d) = self.lap[self.curr_lap_point_index]
         msg.x, msg.y, msg.z = n, e, d
@@ -157,11 +219,73 @@ class MissionNode(Node):
             f"Trying to go to {self.lap[self.curr_lap_point_index]}, curr_index: {self.curr_lap_point_index}"
         )
 
-    def warn_pub(self, string):
-        self.get_logger().warn(string)
-        string_msg = String()
-        string_msg.data = string
-        self.mission_status_pub.publish(string_msg)
+    def perform_survey(self):
+        if (self.survey_zone is None):
+            self.warn_pub(
+                "Not quite ready to perform survey, survey zone wasn't set.")
+            return
+        if (self.target_location is not None):
+            self.state = self.PERFORMING_AIRDROP
+            return
+        if (self.targets_bool[self.curr_target_index] == False):
+            self.curr_target_pub.publish(self.targets[self.curr_target_index])
+            self.targets_bool[self.curr_target_index] = True
+        # TODO: SURVEY THE AREA
+
+    def distance_from(self, n, e, d):
+        return ((n - self.curr_n)**2 + (e - self.curr_e)**2 +
+                (d - self.curr_d)**2)**(1 / 2)
+
+    def perform_airdrop(self):
+        if (self.distance_from(self.target_location.x, self.target_location.y,
+                               self.curr_d) >= self.curr_tolerance):
+            msg = Waypoint()
+            (n, e,
+             d) = self.target_location.x, self.target_location.y, self.curr_d
+            msg.x, msg.y, msg.z = n, e, d
+            msg.max_speed_h = self.get_max_speed_h()
+            self.goal_waypoint_pub.publish(msg)
+            return
+        msg = Int32()
+        msg.data = self.curr_target_index + 1
+        self.airdrop_pub.publish(msg)
+
+        dur = Duration(seconds=60)
+        self.get_clock().sleep_for(dur)
+        self.curr_target_index += 1
+        if (self.curr_target_index < len(self.targets)):
+            self.state = self.PERFORMIN_LAP
+        else:
+            self.state = self.RTH
+
+    def perform_rth(self):
+        if (self.distance_from(0, 0, self.curr_d) >= 1.0):
+            msg = Waypoint()
+            (n, e, d) = 0.0, 0.0, self.curr_d
+            msg.x, msg.y, msg.z = n, e, d
+            msg.max_speed_h = self.get_max_speed_h()
+            self.goal_waypoint_pub.publish(msg)
+            return
+
+        msg = Waypoint()
+        (n, e, d) = 0.0, 0.0, 0.0
+        msg.x, msg.y, msg.z = n, e, d
+        msg.max_speed_h = self.get_max_speed_h()
+        self.goal_waypoint_pub.publish(msg)
+
+        self.state = self.WAITING
+
+    def mission_tick(self):
+        if (self.state == self.WAITING):
+            return
+        if (self.state == self.PERFORMIN_LAP):
+            self.perform_lap()
+        if (self.state == self.SURVEY_AREA):
+            self.perform_survey()
+        if (self.state == self.PERFORMING_AIRDROP):
+            self.perform_airdrop()
+        if (self.state == self.RTH):
+            self.perform_rth()
 
 
 def main(args=None):
