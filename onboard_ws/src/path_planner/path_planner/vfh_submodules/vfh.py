@@ -50,7 +50,7 @@ class VfhParam:
 
 class VfhAlgorithm:
 
-    def __init__(self, space_size=120, cell_size=0.5, active_region_size=30):
+    def __init__(self, space_size=120, cell_size=0.5, active_region_size=60):
         """
             builds the necessary data structures for the algorithm
             space_size and cell_size relate to the configuration space C
@@ -360,7 +360,7 @@ class VfhAlgorithm:
                                              goal_pos.z)
 
         # step_size = min(speed_step, dist_step)
-        step_size = min(20, dist_step)
+        step_size = min(60, dist_step)
 
         return step_size * np.cos(angle), step_size * np.sin(angle), v_p
 
@@ -380,12 +380,15 @@ class VfhAlgorithm:
         return res
 
     def generate_target(self, goal_pos: LocalCoordinates,
-                        vehicle_info: VehicleInfo,  laser_scan: LaserScan,
+                        vehicle_info: VehicleInfo, laser_scan: LaserScan,
                         obstacles: list[Obstacle], dt_secs: float):
         self.update_position(vehicle_info)
         # self.update_detections(laser_scan)
-        dist_from_goal = ((goal_pos.x - self.curr_pos.x)**2 + (goal_pos.y - self.curr_pos.y)**2)**(1/2) // self.cell_size 
-        self.active_region_width = min(self.min_active_region_width, max(dist_from_goal * 2 + 1, 3))
+        dist_from_goal = (
+            (goal_pos.x - self.curr_pos.x)**2 +
+            (goal_pos.y - self.curr_pos.y)**2)**(1 / 2) // self.cell_size
+        self.active_region_width = min(self.min_active_region_width,
+                                       max(dist_from_goal * 2 + 1, 3))
         self.params.adapt(self.active_region_width)
         N, M = self.plane_hist.shape
         half_x = int(N / 2)

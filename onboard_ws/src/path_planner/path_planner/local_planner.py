@@ -69,8 +69,7 @@ class VfhPlanner(Node):
         timer_period = 0.5
         self.timer_1 = self.create_timer(timer_period, self.controller_tick)
         # self.goal_waypoint = LocalCoordinates(0.0, 10.0, -10.0)
-        self.timer_2 = self.create_timer(timer_period / 2,
-                                         self.planner_tick_v3)
+        self.timer_2 = self.create_timer(0.10, self.planner_tick_v3)
 
         self.planner = VfhAlgorithm()
 

@@ -51,12 +51,17 @@ class MissionNode(Node):
             ListGlobalCoordinates, "/survey_zone", self.survey_zone_callback,
             self.qos_profile)
         self.survey_zone = None
+        self.survey_toggle = False
 
         self.lap_points_sub = self.create_subscription(
             ListGlobalCoordinates, "/mission_lap", self.mission_lap_callback,
             self.qos_profile)
         self.lap = None
         self.curr_lap_point_index = 0
+        self.lap_toggle = False
+
+        self.airdrop_toggle = False
+        self.rth_toggle = False
 
         self.target_list_sub = self.create_subscription(
             ListTargets, "/mission_targets", self.targets_callback,
@@ -210,15 +215,18 @@ class MissionNode(Node):
                 self.state = self.SURVEY_AREA
             self.curr_lap_point_index = (self.curr_lap_point_index + 1) % len(
                 self.lap)
+            self.lap_toggle = False
             return
-        msg = Waypoint()
-        (n, e, d) = self.lap[self.curr_lap_point_index]
-        msg.x, msg.y, msg.z = n, e, d
-        msg.max_speed_h = self.get_max_speed_h()
-        self.goal_waypoint_pub.publish(msg)
-        self.warn_pub(
-            f"Trying to go to {self.lap[self.curr_lap_point_index]}, curr_index: {self.curr_lap_point_index}"
-        )
+        if (not self.lap_toggle):
+            msg = Waypoint()
+            (n, e, d) = self.lap[self.curr_lap_point_index]
+            msg.x, msg.y, msg.z = n, e, d
+            msg.max_speed_h = self.get_max_speed_h()
+            self.goal_waypoint_pub.publish(msg)
+            self.warn_pub(
+                f"Trying to go to {self.lap[self.curr_lap_point_index]}, curr_index: {self.curr_lap_point_index}"
+            )
+            self.lap_toggle = True
 
     def perform_survey(self):
         if (self.survey_zone is None):
@@ -227,16 +235,19 @@ class MissionNode(Node):
             return
         if (self.target_location is not None):
             self.state = self.PERFORMING_AIRDROP
+            self.survey_toggle = False
             return
         if (not self.top_target_published):
             self.curr_target_pub.publish(self.targets[0])
             self.top_target_published = True
         # TODO: SURVEY THE AREA
-        survey_point = self.survey_zone[1]
-        msg = Waypoint()
-        msg.x, msg.y, msg.z = (*survey_point[:2], self.curr_d)
-        msg.max_speed_h = self.get_max_speed_h()
-        self.goal_waypoint_pub.publish(msg)
+        if (not self.survey_toggle):
+            survey_point = self.survey_zone[1]
+            msg = Waypoint()
+            msg.x, msg.y, msg.z = (*survey_point[:2], self.curr_d)
+            msg.max_speed_h = self.get_max_speed_h()
+            self.goal_waypoint_pub.publish(msg)
+            self.survey_toggle = True
 
     def distance_from(self, n, e, d):
         return ((n - self.curr_n)**2 + (e - self.curr_e)**2 +
@@ -245,13 +256,17 @@ class MissionNode(Node):
     def perform_airdrop(self):
         if (self.distance_from(self.target_location.x, self.target_location.y,
                                self.curr_d) >= self.curr_tolerance):
-            msg = Waypoint()
-            (n, e,
-             d) = self.target_location.x, self.target_location.y, self.curr_d
-            msg.x, msg.y, msg.z = n, e, d
-            msg.max_speed_h = self.get_max_speed_h()
-            self.goal_waypoint_pub.publish(msg)
+            if (not self.airdrop_toggle):
+                msg = Waypoint()
+                (
+                    n, e, d
+                ) = self.target_location.x, self.target_location.y, self.curr_d
+                msg.x, msg.y, msg.z = n, e, d
+                msg.max_speed_h = self.get_max_speed_h()
+                self.goal_waypoint_pub.publish(msg)
+                self.airdrop_toggle = True
             return
+        self.airdrop_toggle = False
         msg = Int32()
         msg.data = self.targets[0].target_hub
         self.airdrop_pub.publish(msg)
@@ -268,13 +283,16 @@ class MissionNode(Node):
 
     def perform_rth(self):
         if (self.distance_from(0, 0, self.curr_d) >= 1.0):
-            msg = Waypoint()
-            (n, e, d) = 0.0, 0.0, self.curr_d
-            msg.x, msg.y, msg.z = n, e, d
-            msg.max_speed_h = self.get_max_speed_h()
-            self.goal_waypoint_pub.publish(msg)
+            if (not self.rth_toggle):
+                msg = Waypoint()
+                (n, e, d) = 0.0, 0.0, self.curr_d
+                msg.x, msg.y, msg.z = n, e, d
+                msg.max_speed_h = self.get_max_speed_h()
+                self.goal_waypoint_pub.publish(msg)
+                self.rth_toggle = True
             return
 
+        self.rth_toggle = False
         msg = Waypoint()
         (n, e, d) = 0.0, 0.0, 0.0
         msg.x, msg.y, msg.z = n, e, d

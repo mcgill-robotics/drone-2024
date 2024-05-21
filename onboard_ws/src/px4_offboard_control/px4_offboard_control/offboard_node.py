@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
+import numpy as np
 from typing import Deque
 import collections
 from px4_msgs.msg import VehicleCommand
 from px4_msgs.msg import GotoSetpoint
+from px4_msgs.msg import TrajectorySetpoint
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import VehicleCommandAck
 from px4_msgs.msg import BatteryStatus
@@ -143,6 +145,9 @@ class OffboardControl(Node):
 
         self.goto_setpoint_pub = self.create_publisher(
             GotoSetpoint, '/fmu/in/goto_setpoint', qos_profile)
+
+        self.trajectory_setpoint_pub = self.create_publisher(
+            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile)
 
         self.vehicle_command_pub = self.create_publisher(
             VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
@@ -315,15 +320,17 @@ class OffboardControl(Node):
         """
             Waypoint action, only completes when within current_tolarance from the target waypoint
         """
-        trajectorySetpoint = GotoSetpoint()
+        trajectorySetpoint = TrajectorySetpoint()
         trajectorySetpoint.position = [x, y, z]
-        if (yaw is not None):
-            trajectorySetpoint.flag_control_heading = True
-            trajectorySetpoint.heading = yaw
-        if (max_speed_h is not None):
-            trajectorySetpoint.flag_set_max_horizontal_speed = True
-            trajectorySetpoint.max_horizontal_speed = max_speed_h
-        self.goto_setpoint_pub.publish(trajectorySetpoint)
+        trajectorySetpoint.yaw = yaw
+        dx, dy = x - self.vehicle_local_position.x, y - self.vehicle_local_position.y
+        if (dx**2 + dy**2)**(1 / 2) >= max_speed_h:
+            angle = np.arctan2(dy, dx)
+            vy = max_speed_h * np.sin(angle)
+            vx = max_speed_h * np.cos(angle)
+            vz = np.NAN
+            trajectorySetpoint.velocity = [vx, vy, vz]
+        self.trajectory_setpoint_pub.publish(trajectorySetpoint)
 
     def land(self):
         """
