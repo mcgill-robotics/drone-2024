@@ -62,8 +62,7 @@ class MissionNode(Node):
             ListTargets, "/mission_targets", self.targets_callback,
             self.qos_profile)
         self.targets = None
-        self.targets_bool = None
-        self.curr_target_index = 0
+        self.top_target_published = False
 
         self.target_location_sub = self.create_subscription(
             Point32, "/target_location", self.target_location_callback,
@@ -97,11 +96,15 @@ class MissionNode(Node):
 
         timer_period = 0.5
         self.timer_1 = self.create_timer(timer_period, self.mission_tick)
+        self.timer_2 = self.create_timer(timer_period * 2, self.describe_state)
+
+    def describe_state(self):
+        self.warn_pub("Nothing to report")
 
     def warn_pub(self, string):
         self.get_logger().warn(string)
         string_msg = String()
-        string_msg.data = f"State: {'WAITING' if self.state == self.WAITING else 'PERFORMING_LAP' if self.state == self.PERFORMING_LAP else 'SURVEY_AREA' if self.state == self.SURVER_AREA else 'PERFORMING_AIRDROP' if self.state == self.PERFORMING_AIRDROP else 'RTH'}, {string}"
+        string_msg.data = f"State: {'WAITING' if self.state == self.WAITING else 'PERFORMING_LAP' if self.state == self.PERFORMIN_LAP else 'SURVEY_AREA' if self.state == self.SURVEY_AREA else 'PERFORMING_AIRDROP' if self.state == self.PERFORMING_AIRDROP else 'RTH'}, {string}"
         self.mission_status_pub.publish(string_msg)
 
     def vehicle_info_callback(self, msg: VehicleInfo):
@@ -163,15 +166,13 @@ class MissionNode(Node):
             self.lap.append((n, e, d))
 
     def targets_callback(self, msg: ListTargets):
-        self.curr_target_index = 0
         self.targets = []
-        self.targets_bool = []
+        self.top_target_published = False
         for target in msg.targets:
             self.targets.append(target)
-            self.targets.append(False)
 
     def target_location_callback(self, msg: Point32):
-        self.target_location = (msg.x, msg.y, msg.z)
+        self.target_location = msg
 
     def lap_tolerance_callback(self, msg: Float32):
         if (msg.data <= 0.):
@@ -190,7 +191,7 @@ class MissionNode(Node):
                 (target_d - self.curr_d)**2)**(1 / 2)
 
     def get_max_speed_h(self):
-        return 8.0
+        return 10.0
 
     def perform_lap(self):
         if (self.curr_n is None):
@@ -227,10 +228,15 @@ class MissionNode(Node):
         if (self.target_location is not None):
             self.state = self.PERFORMING_AIRDROP
             return
-        if (self.targets_bool[self.curr_target_index] == False):
-            self.curr_target_pub.publish(self.targets[self.curr_target_index])
-            self.targets_bool[self.curr_target_index] = True
+        if (not self.top_target_published):
+            self.curr_target_pub.publish(self.targets[0])
+            self.top_target_published = True
         # TODO: SURVEY THE AREA
+        survey_point = self.survey_zone[1]
+        msg = Waypoint()
+        msg.x, msg.y, msg.z = (*survey_point[:2], self.curr_d)
+        msg.max_speed_h = self.get_max_speed_h()
+        self.goal_waypoint_pub.publish(msg)
 
     def distance_from(self, n, e, d):
         return ((n - self.curr_n)**2 + (e - self.curr_e)**2 +
@@ -247,13 +253,15 @@ class MissionNode(Node):
             self.goal_waypoint_pub.publish(msg)
             return
         msg = Int32()
-        msg.data = self.curr_target_index + 1
+        msg.data = self.targets[0].target_hub
         self.airdrop_pub.publish(msg)
 
         dur = Duration(seconds=60)
         self.get_clock().sleep_for(dur)
-        self.curr_target_index += 1
-        if (self.curr_target_index < len(self.targets)):
+        self.target_location = None
+        self.top_target_published = False
+        self.targets.pop(0)
+        if (len(self.targets) > 0):
             self.state = self.PERFORMIN_LAP
         else:
             self.state = self.RTH
