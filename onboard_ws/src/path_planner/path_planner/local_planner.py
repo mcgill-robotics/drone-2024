@@ -69,7 +69,8 @@ class VfhPlanner(Node):
         timer_period = 0.5
         self.timer_1 = self.create_timer(timer_period, self.controller_tick)
         # self.goal_waypoint = LocalCoordinates(0.0, 10.0, -10.0)
-        self.timer_2 = self.create_timer(0.10, self.planner_tick_v3)
+        self.timer_2 = self.create_timer(timer_period / 2,
+                                         self.planner_tick_v3)
 
         self.planner = VfhAlgorithm()
 
@@ -94,7 +95,7 @@ class VfhPlanner(Node):
             return
         self.target_waypoint = self.planner.generate_target(
             self.goal_waypoint, self.vehicle_info, self.laser_scan,
-            self.obstacles, self.timer_2.timer_period_ns * 1e-9)
+            self.obstacles)
 
     @staticmethod
     def target_match_action(target: LocalCoordinates, msg: Action):

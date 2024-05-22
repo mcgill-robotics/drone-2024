@@ -11,13 +11,13 @@ class VfhParam:
 
     def __init__(
             self,
-            angular_resolution=0.0872664,  # 5 degrees, but in radians
+            angular_resolution=0.0872664,  # 10 degrees, but in radians
             a=0,
             b=1,
             robot_radius=1.5,
             threshold_low=1,
             threshold_high=5,
-            s_max=20,
+            s_max=16,
             v_max=8,
             mu_1=5,
             mu_2=2,
@@ -50,7 +50,7 @@ class VfhParam:
 
 class VfhAlgorithm:
 
-    def __init__(self, space_size=120, cell_size=0.5, active_region_size=60):
+    def __init__(self, space_size=120, cell_size=3.0, active_region_size=120):
         """
             builds the necessary data structures for the algorithm
             space_size and cell_size relate to the configuration space C
@@ -60,16 +60,16 @@ class VfhAlgorithm:
         """
         self.params = VfhParam()
         # things at position x, y in the plane_hist are actually at x, y in NED (from the center)
-        self.plane_hist = np.zeros(
-            (int(space_size / cell_size), int(space_size / cell_size)))
+        # self.plane_hist = np.zeros(
+        # (int(space_size / cell_size), int(space_size / cell_size)))
         self.cell_size = cell_size
         self.curr_pos: LocalCoordinates | None = None
         self.q: list[float] | None = None
         self.min_active_region_width = int(active_region_size / cell_size)
         self.params.adapt(self.min_active_region_width)
         # grid_kws = {'width_ratios': (0.9, 0.05), 'wspace': 0.2}
-        self.fig, ((self.ax, self.ax2), (self.ax3,
-                                         self.ax4)) = plt.subplots(2, 2)
+        # self.fig, ((self.ax, self.ax2), (self.ax3,
+        #                                  self.ax4)) = plt.subplots(2, 2)
         # self.fig.canvas.draw_idle()
         # self.fig.canvas.start_event_loop(0.001)
         self.last_time = None
@@ -172,17 +172,17 @@ class VfhAlgorithm:
             self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
             self.q = msg.q
 
-        tx, ty = -int((msg.x - self.curr_pos.x) / self.cell_size), -int(
-            (msg.y - self.curr_pos.y) / self.cell_size)
-        N, M = self.plane_hist.shape
-        image_translated = np.zeros_like(self.plane_hist)
-        image_translated[max(tx, 0):M + min(tx, 0),
-                         max(ty, 0):N +
-                         min(ty, 0)] = self.plane_hist[-min(tx, 0):M -
-                                                       max(tx, 0),
-                                                       -min(ty, 0):N -
-                                                       max(ty, 0)]
-        self.plane_hist = image_translated
+        # tx, ty = -int((msg.x - self.curr_pos.x) / self.cell_size), -int(
+        # (msg.y - self.curr_pos.y) / self.cell_size)
+        # N, M = self.plane_hist.shape
+        # image_translated = np.zeros_like(self.plane_hist)
+        # image_translated[max(tx, 0):M + min(tx, 0),
+        #                  max(ty, 0):N +
+        #                  min(ty, 0)] = self.plane_hist[-min(tx, 0):M -
+        #                                                max(tx, 0),
+        #                                                -min(ty, 0):N -
+        #                                                max(ty, 0)]
+        # self.plane_hist = image_translated
         self.curr_pos = LocalCoordinates(msg.x, msg.y, msg.z, msg.heading)
         self.q = msg.q
 
@@ -346,8 +346,7 @@ class VfhAlgorithm:
         self.last_time = curr
         return diff + dt_secs
 
-    def calculate_movement_vec(self, candidate, dt_secs, smoothed_value,
-                               goal_pos):
+    def calculate_movement_vec(self, candidate, smoothed_value, goal_pos):
         angle = candidate * self.params.angular_resolution
         h_pp_c = min(smoothed_value, self.params.h_m)
         reduc = (1 - h_pp_c / self.params.h_m)
@@ -360,7 +359,7 @@ class VfhAlgorithm:
                                              goal_pos.z)
 
         # step_size = min(speed_step, dist_step)
-        step_size = min(60, dist_step)
+        step_size = min(120, dist_step)
 
         return step_size * np.cos(angle), step_size * np.sin(angle), v_p
 
@@ -368,7 +367,9 @@ class VfhAlgorithm:
         N, M = region.shape
         res = region.copy()
         for x in range(N):
+            x += 0.5
             for y in range(M):
+                y += 0.5
                 dx = x - N // 2
                 dy = y - M // 2
                 dx, dy = dx * self.cell_size, dy * self.cell_size
@@ -376,27 +377,29 @@ class VfhAlgorithm:
                 real_y = self.curr_pos.y + dy
                 for obstacle in obstacles:
                     if (obstacle.contains(real_x, real_y)):
-                        res[x][y] = self.max_val_grid_cell
+                        res[int(x)][int(y)] = self.max_val_grid_cell
         return res
 
     def generate_target(self, goal_pos: LocalCoordinates,
                         vehicle_info: VehicleInfo, laser_scan: LaserScan,
-                        obstacles: list[Obstacle], dt_secs: float):
+                        obstacles: list[Obstacle]):
         self.update_position(vehicle_info)
         # self.update_detections(laser_scan)
         dist_from_goal = (
             (goal_pos.x - self.curr_pos.x)**2 +
             (goal_pos.y - self.curr_pos.y)**2)**(1 / 2) // self.cell_size
-        self.active_region_width = min(self.min_active_region_width,
-                                       max(dist_from_goal * 2 + 1, 3))
+        self.active_region_width = int(
+            min(self.min_active_region_width, max(dist_from_goal * 2 + 1, 3)))
         self.params.adapt(self.active_region_width)
-        N, M = self.plane_hist.shape
-        half_x = int(N / 2)
-        half_y = int(M / 2)
-        half_width = int(self.active_region_width / 2)
-        active_region = self.plane_hist[half_x - half_width:half_x +
-                                        half_width, half_y -
-                                        half_width:half_y + half_width]
+        # N, M = self.plane_hist.shape
+        # half_x = int(N / 2)
+        # half_y = int(M / 2)
+        # half_width = int(self.active_region_width / 2)
+        # active_region = self.plane_hist[half_x - half_width:half_x +
+        #                                 half_width, half_y -
+        #                                 half_width:half_y + half_width]
+        active_region = np.zeros(
+            (self.active_region_width, self.active_region_width))
         # self.ax.imshow(self.plane_hist.T, cmap='hot')
         # self.ax.invert_yaxis()
         # # plt.show()
@@ -445,8 +448,7 @@ class VfhAlgorithm:
         print(f"Candidate : {chosen_candidate}")
         print(f"Target : {target_sector}")
         dx, dy, v_p = self.calculate_movement_vec(
-            chosen_candidate, dt_secs, smooth_active[chosen_candidate],
-            goal_pos)
+            chosen_candidate, smooth_active[chosen_candidate], goal_pos)
 
         new_x = self.curr_pos.x + dx
         new_y = self.curr_pos.y + dy

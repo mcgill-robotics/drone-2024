@@ -179,7 +179,7 @@ class OffboardControl(Node):
         offboard_msg = OffboardControlMode()
         offboard_msg.timestamp = int(Clock().now().nanoseconds / 1000)
         offboard_msg.position = True
-        offboard_msg.velocity = False
+        offboard_msg.velocity = True
         offboard_msg.acceleration = False
         self.offboard_mode_pub.publish(offboard_msg)
 

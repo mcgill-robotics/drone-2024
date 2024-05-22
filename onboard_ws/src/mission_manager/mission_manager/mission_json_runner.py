@@ -14,7 +14,7 @@ import os
 class MinimalPublisher(Node):
 
     def __init__(self):
-        super().__init__('minimal_publisher')
+        super().__init__('mission_detail_publisher')
         self.qos_profile = QoSProfile(
             reliability=QoSReliabilityPolicy.
             RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
