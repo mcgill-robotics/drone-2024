@@ -1,4 +1,6 @@
 #!/bin/sh
+#
+source ../install/setup.bash
 
 # Set Session Name
 SESSION="Testing"
@@ -37,6 +39,8 @@ then
 
         tmux send-keys -t "$SESSION:$window" -t 5 'source ../install/setup.bash' enter
         tmux send-keys -t "$SESSION:$window" -t 5 'ros2 run computer_vision dummy_cv' enter
+
+        tmux select-layout tiled
 fi
 # Attach Session, on the Main window
 tmux attach-session -t $SESSION

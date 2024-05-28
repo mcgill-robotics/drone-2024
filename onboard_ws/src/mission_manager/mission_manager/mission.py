@@ -18,6 +18,7 @@ from geometry_msgs.msg import Point32
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 
 import pymap3d as pm
+import numpy as np
 
 
 class MissionNode(Node):
@@ -51,7 +52,9 @@ class MissionNode(Node):
             ListGlobalCoordinates, "/survey_zone", self.survey_zone_callback,
             self.qos_profile)
         self.survey_zone = None
-        self.survey_toggle = False
+        self.survey_path = None
+        self.survey_path_curr_index = 0
+        self.survey_zone_toggle = False
 
         self.lap_points_sub = self.create_subscription(
             ListGlobalCoordinates, "/mission_lap", self.mission_lap_callback,
@@ -62,6 +65,9 @@ class MissionNode(Node):
 
         self.airdrop_toggle = False
         self.rth_toggle = False
+
+        self.survey_toggle = False
+        self.at_survey_zone = False
 
         self.target_list_sub = self.create_subscription(
             ListTargets, "/mission_targets", self.targets_callback,
@@ -78,6 +84,11 @@ class MissionNode(Node):
             Float32, "/mission_lap_tolerance", self.lap_tolerance_callback,
             self.qos_profile)
         self.curr_tolerance = 3.0
+
+        self.mission_time_sub = self.create_subscription(
+            Float32, "/mission_time", self.mission_time_callback,
+            self.qos_profile)
+        self.mission_time = 28 * 60
 
         self.mission_status_pub = self.create_publisher(
             String, "/mission_status", self.qos_profile)
@@ -97,14 +108,26 @@ class MissionNode(Node):
         self.start_sub = self.create_subscription(Empty, "/start",
                                                   self.start_callback,
                                                   self.qos_profile)
+        self.start_time = None
         self.state = MissionNode.WAITING
 
         timer_period = 0.5
         self.timer_1 = self.create_timer(timer_period, self.mission_tick)
-        self.timer_2 = self.create_timer(timer_period * 2, self.describe_state)
+        self.timer_2 = self.create_timer(timer_period * 2, self.periodic_task)
 
     def describe_state(self):
         self.warn_pub("Nothing to report")
+
+    def periodic_task(self):
+        self.describe_state()
+        if (self.start_time is not None):
+            curr_time = self.get_clock().now().seconds_nanoseconds()
+            time_diff = (curr_time[0] + curr_time[1] * 1e-9) - (
+                self.start_time[0] + self.start_time[1] * 1e-9)
+            if (time_diff >= self.mission_time):
+                self.state = self.RTH
+
+        # TODO: Stop mission if batery percentage is below a certain threshold
 
     def warn_pub(self, string):
         self.get_logger().warn(string)
@@ -157,6 +180,27 @@ class MissionNode(Node):
                                    glob.altitude)
             self.survey_zone.append((n, e, d))
 
+        ## Assumes rectangular survey zone (survey zone with 4 points)
+
+        self.survey_path = []
+        self.survey_path_curr_index = 0
+        num_subs = 10
+        a = np.array(self.survey_zone[0])
+        b = np.array(self.survey_zone[1])
+        c = np.array(self.survey_zone[3])
+
+        ab = b - a
+        ac = c - a
+        ac_step = ac / num_subs
+        for i in range(int(num_subs // 2)):
+            origin = a + 2 * i * ac_step
+            self.survey_path.append(origin)
+            self.survey_path.append(origin + ab)
+            self.survey_path.append(origin + ab + ac_step)
+            self.survey_path.append(origin + ac_step)
+
+        self.get_logger().warn(f"Survey lap: {self.survey_path}")
+
     def mission_lap_callback(self, msg: ListGlobalCoordinates):
         if self.lat0 is None:
             info_string = "Not quite ready to take in coordinates for laps, waiting on vehicle info..."
@@ -186,7 +230,17 @@ class MissionNode(Node):
             return
         self.curr_tolerance = msg.data
 
+    def mission_time_callback(self, msg: Float32):
+        if (msg.data <= 0.):
+            self.warn_pub(
+                "Mission time must be a positive floating point number, representing seconds of allowed mission time"
+            )
+            return
+        self.mission_time = msg.data
+
     def start_callback(self, msg: Empty):
+        if (self.start_time is None):
+            self.start_time = self.get_clock().now().seconds_nanoseconds()
         if (self.state == self.WAITING):
             self.state = self.PERFORMIN_LAP
 
@@ -228,6 +282,10 @@ class MissionNode(Node):
             )
             self.lap_toggle = True
 
+    def distance_from(self, n, e, d):
+        return ((n - self.curr_n)**2 + (e - self.curr_e)**2 +
+                (d - self.curr_d)**2)**(1 / 2)
+
     def perform_survey(self):
         if (self.survey_zone is None):
             self.warn_pub(
@@ -235,23 +293,44 @@ class MissionNode(Node):
             return
         if (self.target_location is not None):
             self.state = self.PERFORMING_AIRDROP
+            self.survey_zone_toggle = False
+            self.at_survey_zone = False
             self.survey_toggle = False
             return
         if (not self.top_target_published):
             self.curr_target_pub.publish(self.targets[0])
             self.top_target_published = True
         # TODO: SURVEY THE AREA
-        if (not self.survey_toggle):
-            survey_point = self.survey_zone[1]
+        survey_point = self.survey_zone[0]
+        survey_origin = (*survey_point[:2], self.curr_d)
+
+        # goto survey area
+        if (not self.survey_zone_toggle):
             msg = Waypoint()
-            msg.x, msg.y, msg.z = (*survey_point[:2], self.curr_d)
+            msg.x, msg.y, msg.z = survey_origin
             msg.max_speed_h = self.get_max_speed_h()
             self.goal_waypoint_pub.publish(msg)
-            self.survey_toggle = True
-
-    def distance_from(self, n, e, d):
-        return ((n - self.curr_n)**2 + (e - self.curr_e)**2 +
-                (d - self.curr_d)**2)**(1 / 2)
+            self.survey_zone_toggle = True
+        elif (self.distance_from(survey_origin[0], survey_origin[1],
+                                 survey_origin[2]) < self.curr_tolerance):
+            self.at_survey_zone = True
+        if (self.at_survey_zone and self.survey_zone_toggle):
+            tar_n, tar_e, tar_d = self.survey_path[self.survey_path_curr_index]
+            # TODO: PATROL AT 1 m/s
+            if (self.distance_from(tar_n, tar_e, self.curr_d) <= 0.5):
+                self.survey_path_curr_index = (self.survey_path_curr_index +
+                                               1) % len(self.survey_path)
+                self.survey_toggle = False
+                return
+            if (not self.survey_toggle):
+                msg = Waypoint()
+                (n, e, d) = self.survey_path[self.survey_path_curr_index]
+                msg.x, msg.y, msg.z = n, e, self.curr_d
+                msg.max_speed_h = 2.0
+                self.get_logger().warn(
+                    f"Trying to go to: {msg.x}, {msg.y}, {msg.z}")
+                self.goal_waypoint_pub.publish(msg)
+                self.survey_toggle = True
 
     def perform_airdrop(self):
         if (self.distance_from(self.target_location.x, self.target_location.y,
@@ -276,12 +355,15 @@ class MissionNode(Node):
         self.target_location = None
         self.top_target_published = False
         self.targets.pop(0)
+        self.warn_pub(f"Performed airdrop! {len(self.targets)} targets left.")
         if (len(self.targets) > 0):
             self.state = self.PERFORMIN_LAP
         else:
             self.state = self.RTH
 
     def perform_rth(self):
+        self.curr_lap_point_index = 0
+        self.survey_path_curr_index = 0
         if (self.distance_from(0, 0, self.curr_d) >= 1.0):
             if (not self.rth_toggle):
                 msg = Waypoint()

@@ -139,8 +139,8 @@ class VfhPlanner(Node):
             # This should be the part of the code that does obstacle avoidance and publishes action
             if (self.goal_waypoint.distance_to_xyz(self.target_waypoint.x,
                                                    self.target_waypoint.y,
-                                                   self.target_waypoint.z)
-                    <= 0.2):
+                                                   self.goal_waypoint.z)
+                    <= 0.1):
                 return
 
             if (not VfhPlanner.target_match_action(

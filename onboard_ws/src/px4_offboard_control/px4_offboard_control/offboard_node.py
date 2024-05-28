@@ -321,7 +321,7 @@ class OffboardControl(Node):
             Waypoint action, only completes when within current_tolarance from the target waypoint
         """
         trajectorySetpoint = TrajectorySetpoint()
-        trajectorySetpoint.position = [x, y, z]
+        trajectorySetpoint.position = [np.NAN, np.NAN, z]
         trajectorySetpoint.yaw = yaw
         dx, dy = x - self.vehicle_local_position.x, y - self.vehicle_local_position.y
         if (dx**2 + dy**2)**(1 / 2) >= max_speed_h:
@@ -330,6 +330,8 @@ class OffboardControl(Node):
             vx = max_speed_h * np.cos(angle)
             vz = np.NAN
             trajectorySetpoint.velocity = [vx, vy, vz]
+        else:
+            trajectorySetpoint.position = [x, y, z]
         self.trajectory_setpoint_pub.publish(trajectorySetpoint)
 
     def land(self):

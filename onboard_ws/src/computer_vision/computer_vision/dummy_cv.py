@@ -43,7 +43,7 @@ class MinimalPublisher(Node):
 
         # since this is a dummy node made for testing the mission node, i will just return current position + 5
         msg = Point32()
-        msg.x = 94.0
+        msg.x = -94.0
         msg.y = 425.0
         msg.z = 0.0
         return msg
