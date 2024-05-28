@@ -1,7 +1,0 @@
-# Optionally, override randomness with given properties
-interop/Object override
----
-bool success
-string message
-string model_name
-interop/Object ground_truth
