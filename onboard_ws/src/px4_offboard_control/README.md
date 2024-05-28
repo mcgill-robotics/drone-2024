@@ -5,6 +5,9 @@ You will need PX4, ROS2 and the Micro XRCE-DDS Agent to run the simulation and t
 [Refer to this to install all those tools](https://docs.px4.io/main/en/ros/ros2_comm.html).
 ## Note
 The custom types, used by all the topics and services exposed by the offboard_node node can be found under the custom_msgs package, under msg and srv for the message types and service types respectively. 
+## Dependencies
+### Numpy
+Run `pip3 install numpy`.
 ## Steps
 ### Step 0 
 You need to build the workspace. In the onboard_ws directory, run ```colcon build --symlink-install```. Close the terminal when the command is done. Thanks to the symlink install flag, modifying the python files in each package under this workspace do not require the package in which the modified python file resides to be re-built for the changes to take effect.
@@ -16,3 +19,4 @@ In an another terminal, navigate to the PX4 folder and run ```make px4_sitl gaze
 In yet another terminal, navigate to your onboard_ws folder, and run ```source ./install/setup.bash```. Then run ```ros2 run px4_offboard_control offboard_node```
 ### Extra step
 You can now interact with the offboard node's action queue through the services it exposes. Example : ```ros2 service call /px4_action_queue/append_action custom_msgs/srv/SendAction "{action: 1, x: 0., y: 0., z: 0.}"``` will enqueue a take off into the action queue. You can also refer to the various testing scripts to see more use cases.
+

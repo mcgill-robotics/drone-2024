@@ -19,6 +19,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/VehicleInfo.msg"
   "msg/Action.msg"
   "msg/Waypoint.msg"
+  "msg/GlobalCoordinates.msg"
+  "msg/ListGlobalCoordinates.msg"
+  "msg/Target.msg"
+  "msg/ListTargets.msg"
   "srv/SendAction.srv"
   "srv/RequestAction.srv"
 	DEPENDENCIES geometry_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg

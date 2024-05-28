@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
+import numpy as np
 from typing import Deque
 import collections
 from px4_msgs.msg import VehicleCommand
 from px4_msgs.msg import GotoSetpoint
+from px4_msgs.msg import TrajectorySetpoint
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import VehicleCommandAck
 from px4_msgs.msg import BatteryStatus
@@ -49,7 +51,8 @@ class OffboardControl(Node):
             if (action_type == Action.ACTION_TAKE_OFF):
                 return OffboardControl.TakeOff(action)
             elif (action_type == Action.ACTION_WAYPOINT):
-                return OffboardControl.Waypoint(x, y, z, yaw, max_speed_h, action)
+                return OffboardControl.Waypoint(x, y, z, yaw, max_speed_h,
+                                                action)
             elif (action_type == Action.ACTION_LAND):
                 return OffboardControl.Landing(action)
             else:
@@ -76,7 +79,8 @@ class OffboardControl(Node):
             self.max_speed_h = max_speed_h
 
         def perform(self, offboard_object: "OffboardControl"):
-            offboard_object.waypoint(self.x, self.y, self.z, self.yaw, self.max_speed_h)
+            offboard_object.waypoint(self.x, self.y, self.z, self.yaw,
+                                     self.max_speed_h)
 
     class Landing(Action):
 
@@ -131,8 +135,8 @@ class OffboardControl(Node):
         self.vehicle_attitude: VehicleAttitude | None = None
 
         self.vehicle_odom_sub = self.create_subscription(
-            VehicleOdometry, '/fmu/out/vehicle_odometry', self.vehicle_odom_callback, qos_profile 
-        )
+            VehicleOdometry, '/fmu/out/vehicle_odometry',
+            self.vehicle_odom_callback, qos_profile)
         self.vehicle_odom: VehicleOdometry | None = None
 
         # PX4 PUBS
@@ -141,6 +145,9 @@ class OffboardControl(Node):
 
         self.goto_setpoint_pub = self.create_publisher(
             GotoSetpoint, '/fmu/in/goto_setpoint', qos_profile)
+
+        self.trajectory_setpoint_pub = self.create_publisher(
+            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile)
 
         self.vehicle_command_pub = self.create_publisher(
             VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
@@ -172,7 +179,7 @@ class OffboardControl(Node):
         offboard_msg = OffboardControlMode()
         offboard_msg.timestamp = int(Clock().now().nanoseconds / 1000)
         offboard_msg.position = True
-        offboard_msg.velocity = False
+        offboard_msg.velocity = True
         offboard_msg.acceleration = False
         self.offboard_mode_pub.publish(offboard_msg)
 
@@ -300,38 +307,32 @@ class OffboardControl(Node):
         # set wapoint to be up high
 
         trajectorySetpoint = GotoSetpoint()
-        trajectorySetpoint.position = [0.0, 0.0, target_height]
+        trajectorySetpoint.position = [
+            self.vehicle_local_position.x, self.vehicle_local_position.y,
+            target_height
+        ]
         self.goto_setpoint_pub.publish(trajectorySetpoint)
 
         if (abs(self.vehicle_local_position.z - target_height) <= 0.3):
             self.action_queue.popleft()
 
-    def current_tolerance(self):
-        """
-            defines the distance tolerances for Quad Copter configuartion
-        """
-        return 3.
-
     def waypoint(self, x, y, z, yaw, max_speed_h):
         """
             Waypoint action, only completes when within current_tolarance from the target waypoint
         """
-        trajectorySetpoint = GotoSetpoint()
-        trajectorySetpoint.position = [x, y, z]
-        if (yaw is not None):
-            trajectorySetpoint.flag_control_heading = True
-            trajectorySetpoint.heading = yaw
-            # trajectorySetpoint.flag_set_max_heading_rate =  True
-            # trajectorySetpoint.max_heading_rate = 0.78539816339 / 8 # (pi / 4) rad / s 
-        if (max_speed_h is not None):
-            trajectorySetpoint.flag_set_max_horizontal_speed = True
-            trajectorySetpoint.max_horizontal_speed = max_speed_h
-        self.goto_setpoint_pub.publish(trajectorySetpoint)
-        # if (((self.vehicle_local_position.x - x)**(2) +
-        #      (self.vehicle_local_position.y - y)**(2) +
-        #      (self.vehicle_local_position.z - z)**(2))**(1 / 2)
-        #         <= self.current_tolerance()):
-        #     self.action_queue.popleft()
+        trajectorySetpoint = TrajectorySetpoint()
+        trajectorySetpoint.position = [np.NAN, np.NAN, z]
+        trajectorySetpoint.yaw = yaw
+        dx, dy = x - self.vehicle_local_position.x, y - self.vehicle_local_position.y
+        if (dx**2 + dy**2)**(1 / 2) >= max_speed_h:
+            angle = np.arctan2(dy, dx)
+            vy = max_speed_h * np.sin(angle)
+            vx = max_speed_h * np.cos(angle)
+            vz = np.NAN
+            trajectorySetpoint.velocity = [vx, vy, vz]
+        else:
+            trajectorySetpoint.position = [x, y, z]
+        self.trajectory_setpoint_pub.publish(trajectorySetpoint)
 
     def land(self):
         """
@@ -383,7 +384,7 @@ class OffboardControl(Node):
         res.action.y = action.y
         res.action.z = action.z
         res.action.yaw = action.yaw
-        res.action.max_speed_h = action.max_speed_h 
+        res.action.max_speed_h = action.max_speed_h
         return res
 
 

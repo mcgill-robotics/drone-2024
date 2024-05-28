@@ -90,12 +90,12 @@ class VfhPlanner(Node):
         # if (self.vehicle_info is None or self.laser_scan is None
         #         or self.goal_waypoint is None):
         #     return
-        if (self.vehicle_info is None
-                or self.goal_waypoint is None):
+        if (self.vehicle_info is None or self.goal_waypoint is None
+                or self.goal_waypoint == LocalCoordinates()):
             return
         self.target_waypoint = self.planner.generate_target(
             self.goal_waypoint, self.vehicle_info, self.laser_scan,
-            self.obstacles, self.timer_2.timer_period_ns * 1e-9)
+            self.obstacles)
 
     @staticmethod
     def target_match_action(target: LocalCoordinates, msg: Action):
@@ -118,6 +118,7 @@ class VfhPlanner(Node):
                 == VehicleInfo.ARMING_STATE_ARMED
                 and self.vehicle_info.curr_action_obj.action
                 != Action.ACTION_LAND):
+            self.popleft_action()
             action = Action()
             action.action = Action.ACTION_LAND
             self.send_action(action)
@@ -138,8 +139,8 @@ class VfhPlanner(Node):
             # This should be the part of the code that does obstacle avoidance and publishes action
             if (self.goal_waypoint.distance_to_xyz(self.target_waypoint.x,
                                                    self.target_waypoint.y,
-                                                   self.target_waypoint.z)
-                    <= 0.2):
+                                                   self.goal_waypoint.z)
+                    <= 0.1):
                 return
 
             if (not VfhPlanner.target_match_action(
