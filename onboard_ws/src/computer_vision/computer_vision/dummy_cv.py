@@ -7,6 +7,8 @@ from geometry_msgs.msg import Point32
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 from std_msgs.msg import String
 
+import numpy as np
+
 
 class MinimalPublisher(Node):
 
@@ -37,15 +39,80 @@ class MinimalPublisher(Node):
         timer_period = 0.5
         self.timer_1 = self.create_timer(timer_period, self.cv_tick)
 
+    @staticmethod
+    def quat_conjugate(q):
+        quat = np.array([q[0], *(-np.array(q[1:]))])
+        return quat / np.linalg.norm(quat)
+
+    def quat_apply(self, v):
+
+        def quat_mult(q1, q2):
+            a = q1[0]
+            u = np.array(q1[1:])
+            b = q2[0]
+            v = np.array(q2[1:])
+            left = a * b - np.dot(u, v)
+            right = a * v + b * u + np.cross(u, v)
+            return [left, *right]
+
+        v_quat = [0, *v]
+        q_cong = self.quat_conjugate(self.q)
+        tmp = quat_mult(v_quat, q_cong)
+        tmp = quat_mult(self.q, tmp)
+        return tmp[1:]
+
     def find_target_position_in_curr_frame(self):
         # TODO: CV CODE, LOOK FOR self.curr_target in the next few frames (or just next frame)
         # If not in the frame, return None, if is in the frame(s), return its position
+        x, y, z = self.vehicle_info.x, self.vehicle_info.y, self.vehicle_info.z
+        normal_down = np.array([0, 0, 1])
+        # This vector, 'transformed_down', represents the true vector thats pointing down wrt the drone's body,
+        # on a flat surface, it is (0,0,1), but since in flight we will not be always flat (either because of movement or wind),
+        # we have to transform the (0,0,1) vector usnig the drone's current orientation
+        # This is what the quat_apply function does, uses quaternion of the drone to transform the down vector into world down
+        transformed_down = np.array(self.quat_apply(normal_down))
 
-        # since this is a dummy node made for testing the mission node, i will just return current position + 5
+        target_type = self.curr_target.target_type
+        if (target_type == Target.TARGET_TYPE_EMERGENT):
+            # Emergent target
+            pass
+        else:
+            target_shape = self.curr_target.shape  ## The shape variable is actually a number that represents the shape
+
+            # Target shape values
+            # uint32 SHAPE_CIRCLE = 1
+            # uint32 SHAPE_SEMI_CIRCLE = 2
+            # uint32 SHAPE_QUARTER_CIRCLE = 3
+            # uint32 SHAPE_TRIANGLE = 4
+            # uint32 SHAPE_RECTANGLE = 5
+            # uint32 SHAPE_PENTAGON = 6
+            # uint32 SHAPE_STAR = 7
+            # uint32 SHAPE_CROSS = 8
+
+            target_shape_color = self.curr_target.shape_color  # Same as shape, different values for the different colors
+
+            # Target shape colors values
+            # uint32 COLOR_WHITE = 1
+            # uint32 COLOR_BLACK = 2
+            # uint32 COLOR_RED = 3
+            # uint32 COLOR_BLUE = 4
+            # uint32 COLOR_GREEN = 5
+            # uint32 COLOR_PURPLE = 6
+            # uint32 COLOR_BROWN = 7
+            # uint32 COLOR_ORANGE = 8
+            target_letter = self.curr_target.alpha_num  # This is either an ASCII integer representing
+            # the value or the char, am not sure and am too lazy to test sorry emma
+            target_letter_color = self.curr_target.alpha_num_color  # Same numbers as shape color
+
+            # TODO: The rest of the code
+
+        # Once you have located the target, just set the x and y of the following 'msg' variabl,
+        # since this is a dummy node made for testing the mission node, i will just return a postion that i know is close to the
+        # airdrop zone
         msg = Point32()
         msg.x = -94.0
         msg.y = 425.0
-        msg.z = 0.0
+        msg.z = 0.0  # The z part is ignored so dont worry about it
         return msg
 
     def cv_tick(self):
@@ -66,6 +133,7 @@ class MinimalPublisher(Node):
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.vehicle_info = msg
+        self.q = msg.q
 
 
 def main(args=None):
