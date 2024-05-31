@@ -191,7 +191,8 @@ class MissionNode(Node):
 
         ab = b - a
         ac = c - a
-        ab, ac = ab, ac if np.linalg.norm(ab) > np.linalg.norm(ac) else ac, ab
+        ab, ac = (ab, ac) if np.linalg.norm(ab) > np.linalg.norm(ac) else (ac,
+                                                                           ab)
         ac_step = ac / num_subs
         for i in range(int(num_subs // 2)):
             origin = a + 2 * i * ac_step
@@ -251,7 +252,7 @@ class MissionNode(Node):
                 (target_d - self.curr_d)**2)**(1 / 2)
 
     def get_max_speed_h(self):
-        return 10.0
+        return 1.0
 
     def perform_lap(self):
         if (self.curr_n is None):
