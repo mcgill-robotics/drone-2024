@@ -73,8 +73,6 @@ class AirdropMechanism {
       digitalWrite(motor_pin2, HIGH);
       // WAIT
       delay(1000);
-      // retract locking pin
-      analogWrite(en_motor, 0);
       disarm();
       // WAIT
       delay(1000);      
@@ -123,7 +121,7 @@ AirdropMechanism airdrops[5];
 void drop_subscription_callback(const void * msgin)
 {
   static int drop_speed = 220; // Modify this to change drop speed. NOTE: THE MAXIMUM ALLOWED BY ARDUINO IS 255, BUT THIS WILL LIKELY BE ABOVE THE MAX VOLTAGE OF THE MOTOR. CHECK OUTPUT VOLTAGE BEFORE GIVING IT TO THE MOTOR
-  static int drop_time = 5000; // Modify this to change the length of the drop
+  static int drop_time = 45000; // Modify this to change the length of the drop
   const std_msgs__msg__Int32 * msg = (const std_msgs__msg__Int32 *)msgin;
   int input = msg->data;
   if (input < 1 || input > 5) return;
