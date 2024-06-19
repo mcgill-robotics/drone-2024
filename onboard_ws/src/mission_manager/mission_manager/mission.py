@@ -252,7 +252,7 @@ class MissionNode(Node):
                 (target_d - self.curr_d)**2)**(1 / 2)
 
     def get_max_speed_h(self):
-        return 1.0
+        return 6.0
 
     def perform_lap(self):
         if (self.curr_n is None):

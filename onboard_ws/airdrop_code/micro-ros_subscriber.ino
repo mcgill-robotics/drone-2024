@@ -50,31 +50,40 @@ class AirdropMechanism {
       pinMode(motor_pin1, OUTPUT);
       pinMode(motor_pin2, OUTPUT);
       // servo motor
-      servo.write(110);
-      servo.attach(servo_pin, 600, 600);
+      servo.attach(servo_pin);
+      disarm();
+    }
+
+    void arm() {
+      if (this->opens_clock_wise) {
+        servo.write(20);
+      } else {
+        servo.write(160);
+      }
+    }
+
+    void disarm() {
+      servo.write(90);
     }
 
     void perform_airdrop(int drop_speed, int drop_time) {
       // bring bottle up a little
-      analogWrite(en_motor, 120);
+      analogWrite(en_motor, 100);
       digitalWrite(motor_pin1, LOW);
       digitalWrite(motor_pin2, HIGH);
       // WAIT
       delay(1000);
-      // retract locking pin
-      if (opens_clock_wise) {
-        servo.write(20);
-      }
-      else {
-        servo.write(170);
-      }
+      disarm();
       // WAIT
-      delay(1000);
+      delay(1000);      
       // drop bottle
-      analogWrite(en_motor, drop_speed);
       digitalWrite(motor_pin1, HIGH);
       digitalWrite(motor_pin2, LOW);
+      delay(100);
+      analogWrite(en_motor, drop_speed);
+
       delay(drop_time);
+
       // stop motor
       analogWrite(en_motor, 0);
       delay(1000);
@@ -95,9 +104,11 @@ void error_loop() {
 }
 
 
+rcl_subscription_t subscriber_arm;
+rcl_subscription_t subscriber_drop;
+std_msgs__msg__Int32 msg_arm;
+std_msgs__msg__Int32 msg_drop;
 
-rcl_subscription_t subscriber;
-std_msgs__msg__Int32 msg;
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
@@ -107,15 +118,21 @@ rcl_timer_t timer;
 
 AirdropMechanism airdrops[5];
 
-void subscription_callback(const void * msgin)
+void drop_subscription_callback(const void * msgin)
 {
   static int drop_speed = 220; // Modify this to change drop speed. NOTE: THE MAXIMUM ALLOWED BY ARDUINO IS 255, BUT THIS WILL LIKELY BE ABOVE THE MAX VOLTAGE OF THE MOTOR. CHECK OUTPUT VOLTAGE BEFORE GIVING IT TO THE MOTOR
-  static int drop_time = 5000; // Modify this to change the length of the drop
+  static int drop_time = 45000; // Modify this to change the length of the drop
   const std_msgs__msg__Int32 * msg = (const std_msgs__msg__Int32 *)msgin;
   int input = msg->data;
   if (input < 1 || input > 5) return;
   AirdropMechanism requested_airdrop = airdrops[input - 1];
   requested_airdrop.perform_airdrop(drop_speed, drop_time);
+}
+
+void arming_subscription_callback(const void* msgin) {
+  for (int i = 0; i < 5; i++) {
+    airdrops[i].arm();
+  }
 }
 
 
@@ -142,17 +159,23 @@ void setup() {
 
   // create subscriber
   RCCHECK(rclc_subscription_init_default(
-            &subscriber,
+            &subscriber_drop,
             &node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
             "drop_bottle"));
 
+  RCCHECK(rclc_subscription_init_default(
+            &subscriber_arm,
+            &node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+            "arm_drop"));
+
   // create executor
-  RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
-  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg, &subscription_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
+  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_drop, &msg_drop, &drop_subscription_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber_arm, &msg_arm, &arming_subscription_callback, ON_NEW_DATA));
 }
 
 void loop() {
-  delay(100);
-  RCCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)));
+  rclc_executor_spin(&executor);
 }

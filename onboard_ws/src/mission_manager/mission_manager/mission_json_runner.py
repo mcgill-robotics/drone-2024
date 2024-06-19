@@ -9,9 +9,23 @@ from custom_msgs.msg import ListTargets
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 import json
 import os
+from pathlib import Path
 
 
 class MinimalPublisher(Node):
+
+    def make_waypoint_dict(self, latitude, longitude, altitude):
+        return {
+            "AMSLAltAboveTerrain": None,
+            "Altitude": 50,
+            "AltitudeMode": 1,
+            "autoContinue": True,
+            "command": 16,
+            "doJumpId": 14,
+            "frame": 3,
+            "params": [0, 0, 0, None, latitude, longitude, altitude],
+            "type": "SimpleItem"
+        }
 
     def __init__(self):
         super().__init__('mission_detail_publisher')
@@ -38,6 +52,67 @@ class MinimalPublisher(Node):
         self.targets_publisher = self.create_publisher(ListTargets,
                                                        '/mission_targets',
                                                        self.qos_profile)
+        survey_polygon = []
+        geofence_polygon = []
+        survey_object = {
+            "TransectStyleComplexItem": {
+                "CameraCalc": {
+                    "AdjustedFootprintFrontal": 25,
+                    "AdjustedFootprintSide": 25,
+                    "CameraName": "Manual (no camera specs)",
+                    "DistanceMode": 1,
+                    "DistanceToSurface": 50,
+                    "version": 2
+                },
+                "CameraShots": 2,
+                "CameraTriggerInTurnAround": True,
+                "HoverAndCapture": False,
+                "Items": [],
+                "Refly90Degrees": False,
+                "TurnAroundDistance": 10,
+                "VisualTransectPoints": survey_polygon,
+                "version": 2
+            },
+            "angle": 0,
+            "complexItemType": "survey",
+            "entryLocation": 0,
+            "flyAlternateTransects": False,
+            "polygon": survey_polygon,
+            "type": "ComplexItem",
+            "version": 4
+        }
+
+        objects = []
+
+        self.plan_dict = {
+            "fileType": "Plan",
+            "geoFence": {
+                "circles": [],
+                "polygons": [{
+                    "inclusion": True,
+                    "polygon": geofence_polygon,
+                    "version": 1
+                }],
+                "version":
+                2
+            },
+            "groundStation": "QGroundControl",
+            "mission": {
+                "cruiseSpeed": 15,
+                "firmwareType": 12,
+                "globalPlanAltitudeMode": 1,
+                "hoverSpeed": 5,
+                "items": objects,
+                "plannedHomePosition": [47.3977419, 8.545594, 487.989],
+                "vehicleType": 2,
+                "version": 2
+            },
+            "rallyPoints": {
+                "points": [],
+                "version": 2
+            },
+            "version": 1
+        }
 
         # Boundary
         msg_list = ListGlobalCoordinates()
@@ -47,6 +122,7 @@ class MinimalPublisher(Node):
             msg.latitude = entry["latitude"]
             msg.longitude = entry["longitude"]
             msg_list.coords.append(msg)
+            geofence_polygon.append([entry["latitude"], entry["longitude"]])
         self.boundary_publisher.publish(msg_list)
 
         # lap
@@ -57,6 +133,9 @@ class MinimalPublisher(Node):
             msg.latitude = entry["latitude"]
             msg.longitude = entry["longitude"]
             msg.altitude = entry["altitude"]
+            objects.append(
+                self.make_waypoint_dict(entry["latitude"], entry["longitude"],
+                                        entry["altitude"]))
             msg_list.coords.append(msg)
         self.lap_publisher.publish(msg_list)
 
@@ -68,6 +147,7 @@ class MinimalPublisher(Node):
             msg.latitude = entry["latitude"]
             msg.longitude = entry["longitude"]
             msg_list.coords.append(msg)
+            survey_polygon.append([entry["latitude"], entry["longitude"]])
         self.survey_zone_publisher.publish(msg_list)
 
         # targets
@@ -84,7 +164,11 @@ class MinimalPublisher(Node):
             msg_list.targets.append(msg)
         self.targets_publisher.publish(msg_list)
 
+        objects.append(survey_object)
+
         # Remember to publish to /start topic to start the mission
+        with open(Path.home() / "generated_plan.plan", "w") as fp:
+            json.dump(self.plan_dict, fp)
 
 
 def main(args=None):
