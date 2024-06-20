@@ -16,7 +16,7 @@ mot_tracker = Sort()
 
 # load models
 man_shape_model = YOLO('runs/detect/train1/weights/best.pt')
-letter_detection_model = YOLO('runs/detect/train8/weights/best.pt')
+letter_detection_model = YOLO('runs/detect/train10/weights/best.pt')
 
 # load video
 cap = cv2.VideoCapture(0)
