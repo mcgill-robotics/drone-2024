@@ -303,8 +303,9 @@ class MissionNode(Node):
             self.curr_target_pub.publish(self.targets[0])
             self.top_target_published = True
         # TODO: SURVEY THE AREA
+        survey_height = 30.
         survey_point = self.survey_zone[0]
-        survey_origin = (*survey_point[:2], self.curr_d)
+        survey_origin = (*survey_point[:2], survey_height)
 
         # goto survey area
         if (not self.survey_zone_toggle):
@@ -327,7 +328,7 @@ class MissionNode(Node):
             if (not self.survey_toggle):
                 msg = Waypoint()
                 (n, e, d) = self.survey_path[self.survey_path_curr_index]
-                msg.x, msg.y, msg.z = n, e, self.curr_d
+                msg.x, msg.y, msg.z = n, e, survey_height
                 msg.max_speed_h = 2.0
                 self.get_logger().warn(
                     f"Trying to go to: {msg.x}, {msg.y}, {msg.z}")
