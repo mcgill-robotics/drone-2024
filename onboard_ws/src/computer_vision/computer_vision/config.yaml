@@ -1,0 +1,15 @@
+path: drone_2024/onboard_ws/src/computer_vision/computer_vision #dataset root dir
+train: images/train #train images (relative to 'path')
+val: images/train #val images (relative to 'path')
+
+#classes
+names:
+    0: mannequin
+    1: semicircle
+    2: quarter circle
+    3: triangle
+    4: rectangle
+    5: pentagon
+    6: star
+    7: cross
+    8: circle
