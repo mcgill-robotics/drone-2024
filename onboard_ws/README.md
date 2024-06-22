@@ -7,5 +7,8 @@ Make sure to disable the firewall on both devices and either dont have `ROS_DOMA
 ## Dependencies
 Make sure to run `rosdep update && rosdep install --from-paths src --ignore-src -y` to get the necessary ros dependencies for each package. Note however that different packages may have non ros dependencies, refer to their individual README files.
 ## PS
+### Raspi
 Drone ssh port is `33556`, currently address `192.168.0.5`, user `drone` if using the TPlink.
 Drone ssh port is `33556`, currently address `172.20.10.10`, user `drone` if using Imad's hotspot.
+### Jetson
+Drone ssh port is the default, currently address `192.168.0.6`, user `drone` if using the TPlink.
