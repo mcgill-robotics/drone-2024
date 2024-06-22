@@ -7,48 +7,6 @@ import numpy as np
 reader = easyocr.Reader(['en'], gpu=True)  #change to true when on jetson
 
 
-def write_csv(results, output_path):
-    """
-    Write the results to a CSV file.
-
-    Args:
-        results (dict): Dictionary containing the results.
-        output_path (str): Path to the output CSV file.
-    """
-    with open(output_path, 'w') as f:
-        f.write('{},{},{},{},{},{},{}\n'.format('frame_nmr', 'car_id',
-                                                'car_bbox',
-                                                'license_plate_bbox',
-                                                'license_plate_bbox_score',
-                                                'license_number',
-                                                'license_number_score'))
-
-        for frame_nmr in results.keys():
-            for car_id in results[frame_nmr].keys():
-                print(results[frame_nmr][car_id])
-                if 'car' in results[frame_nmr][car_id].keys() and \
-                   'license_plate' in results[frame_nmr][car_id].keys() and \
-                   'text' in results[frame_nmr][car_id]['license_plate'].keys():
-                    f.write('{},{},{},{},{},{},{}\n'.format(
-                        frame_nmr, car_id, '[{} {} {} {}]'.format(
-                            results[frame_nmr][car_id]['car']['bbox'][0],
-                            results[frame_nmr][car_id]['car']['bbox'][1],
-                            results[frame_nmr][car_id]['car']['bbox'][2],
-                            results[frame_nmr][car_id]['car']['bbox'][3]),
-                        '[{} {} {} {}]'.format(
-                            results[frame_nmr][car_id]['license_plate']['bbox']
-                            [0], results[frame_nmr][car_id]['license_plate']
-                            ['bbox'][1], results[frame_nmr][car_id]
-                            ['license_plate']['bbox'][2], results[frame_nmr]
-                            [car_id]['license_plate']['bbox'][3]),
-                        results[frame_nmr][car_id]['license_plate']
-                        ['bbox_score'],
-                        results[frame_nmr][car_id]['license_plate']['text'],
-                        results[frame_nmr][car_id]['license_plate']
-                        ['text_score']))
-        f.close()
-
-
 def read_letter_and_color_on_shape(letter_crop):
     """
     Read the letter text from the given cropped image.
@@ -69,6 +27,8 @@ def read_letter_and_color_on_shape(letter_crop):
     colors = {}
 
     detections = reader.readtext(thresh_im_letter)
+    if (len(detections) == 0):
+        return None, None, None, None
     bbox, text, score = detections[0]
 
     # red boundaries
@@ -207,31 +167,3 @@ def read_letter_and_color_on_shape(letter_crop):
             current_lower_area = area
 
     return text, score, shape_color, letter_color
-
-
-def get_shape(letter, track_ids):
-    """
-    Retrieve the shape coordinates and ID based on the letter coordinates.
-
-    Args:
-        letter (tuple): Tuple containing the coordinates of the letter (x1, y1, x2, y2, score, class_id).
-        track_ids (list): List of shape track IDs and their corresponding coordinates.
-
-    Returns:
-        tuple: Tuple containing the vehicle coordinates (x1, y1, x2, y2) and ID.
-    """
-    x1, y1, x2, y2, score, letter_id = letter
-
-    foundIt = False
-    for j in range(len(track_ids)):
-        xshape1, yshape1, xshape2, yshape2, shape_id = track_ids[j]
-
-        if x1 > xshape1 and y1 > yshape1 and x2 < xshape2 and y2 < yshape2:
-            shape_index = j
-            foundIt = True
-            break
-
-    if foundIt:
-        return track_ids[shape_index]
-
-    return -1, -1, -1, -1, -1

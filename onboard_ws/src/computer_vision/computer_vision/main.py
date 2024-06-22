@@ -5,7 +5,7 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from util import get_shape, read_letter_and_color_on_shape, write_csv
+from util import read_letter_and_color_on_shape
 import matplotlib.pyplot as plt
 
 plt.ion()
@@ -47,7 +47,9 @@ print(f"w, h, fr: {frameWidth}, {frameHeight}, {frameRate}")
 fourcc = cv2.VideoWriter_fourcc(*'DIVX')
 out = cv2.VideoWriter('output.avi', fourcc, frameRate,
                       (frameWidth, frameHeight))
-
+num_rows = 2
+num_columns = 5
+figure, axs = plt.subplots(num_rows, num_columns)
 # read frames
 while True:
     #Capture frame by frame
@@ -61,7 +63,13 @@ while True:
 
     # detect shapes and mannequin
     man_shape_detections = man_shape_model(frame)
-    for detection in man_shape_detections[0].boxes.data.tolist():
+    num_detects = len(man_shape_detections[0].boxes.data.tolist())
+    # plt.imshow(frame_of_interest)
+    # plt.pause(0.0001)
+    last_index = 0
+    for index, detection in enumerate(
+            man_shape_detections[0].boxes.data.tolist()):
+        last_index = index
         x1, y1, x2, y2, score, class_id = detection
         print(
             f"Detected {man_shape_detections[0].names[class_id]}, at x: {(x1 + x2) / 2}, y: {(y1 + y2) / 2}"
@@ -73,8 +81,11 @@ while True:
         cv2.rectangle(frame_copy, (max(0, int(x1)), max(0, int(y1))),
                       (min(int(x2), W), min(int(y2), H)), (0, 255, 0), 2)
 
-        frame_of_interest = frame[int(x1):int(x2), int(y1):int(y2)]
+        frame_of_interest = frame[int(y1):int(y2), int(x1):int(x2)].copy()
         letter_detections = letter_detection_model(frame_of_interest)
+
+        axs[int(index // num_columns)][int(index % num_columns)].imshow(
+            cv2.cvtColor(frame_of_interest, cv2.COLOR_BGR2RGB))
         for detection in letter_detections[0].boxes.data.tolist():
             print(f"AHHHH LOOK AT ME")
             xl1, yl1, xl2, yl2, score_let, _ = detection
@@ -85,6 +96,7 @@ while True:
                 letter_text, letter_text_score, shape_color, letter_color = read_letter_and_color_on_shape(
                     frame_of_interest)
                 if letter_text is not None:
+                    print(f"FOUND TEXT {letter_text}")
                     font = cv2.FONT_HERSHEY_SIMPLEX
                     cv2.putText(
                         frame_copy,
@@ -96,6 +108,9 @@ while True:
                         (max(0, int(xl1 + x1)), max(0, int(yl1 + y1))),
                         (min(int(xl2 + x2), W), min(int(yl2 + y2), H)),
                         (0, 255, 0), 2)
+    for index in range(last_index + 1, num_rows * num_columns):
+        axs[int(index // num_columns)][int(index % num_columns)].cla()
+    plt.pause(0.0001)
 
     cv2.imshow("Camera video", frame_copy)
     out.write(frame_copy)
