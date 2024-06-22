@@ -27,6 +27,7 @@
 		{"latitude": 45.37604189039455, "longitude": -73.90562114519751}
 	],
 "targets" : [
-	{"target_type": 1, "target_hub": 1, "shape": 3, "shape_color": 2, "alpha_num": "B", "alpha_num_color": 8}
+	{"target_type": 1, "target_hub": 1, "shape": 3, "shape_color": 2, "alpha_num": "B", "alpha_num_color": 8},
+	{"target_type": 1, "target_hub": 2, "shape": 3, "shape_color": 2, "alpha_num": "B", "alpha_num_color": 8}
 	]
 }
