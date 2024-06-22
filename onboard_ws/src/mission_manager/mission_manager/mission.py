@@ -103,7 +103,7 @@ class MissionNode(Node):
         self.curr_target_pub = self.create_publisher(Target, "/current_target",
                                                      self.qos_profile)
 
-        self.airdrop_pub = self.create_publisher(Int32, "/drop_bottle", 10)
+        self.airdrop_pub = self.create_publisher(Int32, "/drop_bottle")
 
         self.start_sub = self.create_subscription(Empty, "/start",
                                                   self.start_callback,
