@@ -78,33 +78,20 @@ while True:
                       (min(int(x2), W), min(int(y2), H)), (0, 255, 0), 2)
         detections.append([x1, y1, x2, y2, score, class_id])
 
-    # track shapes and mannequin
+  # track shapes and mannequin
     # track_ids = mot_tracker.update(np.asarray(detections))
 
     # detect letter
     # letter_detections = letter_detection_model(frame)
     # for detection in letter_detections[0].boxes.data.tolist():
-    #     x1, y1, x2, y2, score, letter_id = detection
+    #     xl1, yl1, xl2, yl2, score_let, letter_id = detection_let
     #
-    #     # assign letter to shape and assign mannequin
+    #     # assign letter to shape
     #     xshape1, yshape1, xshape2, yshape2, shape_id = get_shape(
-    #         detection, track_ids)
+    #         detection_let, track_ids)
+    #    print(f"Detected {letter_detections[0].names[letter_id]}, at x: {(xl1 + xl2) / 2}, y: {(yl1 + yl2) / 2")
     #
-    #     if shape_id == 0:
-    #         results[shape_id] = {
-    #             'shape': {
-    #                 'bbox': [xshape1, yshape1, xshape2, yshape2],
-    #                 'color': None
-    #             },
-    #             'letter': {
-    #                 'bbox': [0, 0, 0, 0],
-    #                 'text': None,
-    #                 'color': None,
-    #                 'bbox_score': 0,
-    #                 'text_score': 0
-    #             }
-    #         }
-    #     elif shape_id != -1:
+    #     if shape_id != -1 and shape_id != 3: # it is a shape
     #         # crop to see the letter
     #         letter_crop = frame[int(y1):int(y2), int(x1):int(x2), :]
     #
@@ -112,7 +99,15 @@ while True:
     #         letter_text, letter_text_score, shape_color, letter_color = read_letter_and_color_on_shape(
     #             letter_crop)
     #
-    #         if letter_text is not None:
+    #        if letter_text is not None:
+    #            font = cv2.FONT_HERSHEY_SIMPLEX
+    #            cv2.putText(frame_copy,
+    #                f"{letter_text}, {score}, {letter_color, shape_color}",
+    #                (int(xl1), int(yl1)), font, 4, (255, 255, 255), 2,
+    #                cv2.LINE_AA)
+    #            cv2.rectangle(frame_copy, (max(0, int(xl1)), max(0, int(yl1))),
+    #                  (min(int(xl2), W), min(int(yl2), H)), (0, 255, 0), 2)
+    #
     #             results[shape_id] = {
     #                 'shape': {
     #                     'bbox': [xshape1, yshape1, xshape2, yshape2],
@@ -126,6 +121,22 @@ while True:
     #                     'text_score': letter_text_score
     #                 }
     #             }
+    # 
+    #       elif shape_id == 3: # it is a mannequin
+    #         results[shape_id] = {
+    #             'shape': {
+    #                 'bbox': [xshape1, yshape1, xshape2, yshape2],
+    #                 'color': None
+    #             },
+    #             'letter': {
+    #                 'bbox': [0, 0, 0, 0],
+    #                 'text': None,
+    #                 'color': None,
+    #                 'bbox_score': 0,
+    #                 'text_score': 0
+    #             }
+    #         }
+
     cv2.imshow("Camera video", frame_copy)
     out.write(frame_copy)
 
