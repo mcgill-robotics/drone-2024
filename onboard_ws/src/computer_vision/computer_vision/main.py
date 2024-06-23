@@ -83,24 +83,24 @@ while True:
 
         frame_of_interest = frame[int(y1):int(y2), int(x1):int(x2)].copy()
         letter_detections = letter_detection_model(frame_of_interest)
+        num_detects_letter = len(letter_detections[0].boxes.data.tolist())
 
         axs[int(index // num_columns)][int(index % num_columns)].imshow(
             cv2.cvtColor(frame_of_interest, cv2.COLOR_BGR2RGB))
         for detection in letter_detections[0].boxes.data.tolist():
             print(f"AHHHH LOOK AT ME")
-            xl1, yl1, xl2, yl2, score_let, _ = detection
+            xl1, yl1, xl2, yl2, score_let, let_id = detection
             # assign letter to shape
             if class_id != 3:  # it is a shape
-                # crop to see the letter
                 # read letters and colors
-                letter_text, letter_text_score, shape_color, letter_color = read_letter_and_color_on_shape(
+                shape_color, letter_color = read_color_on_shape(
                     frame_of_interest)
-                if letter_text is not None:
+                if let_id is not None:
                     print(f"FOUND TEXT {letter_text}")
                     font = cv2.FONT_HERSHEY_SIMPLEX
                     cv2.putText(
                         frame_copy,
-                        f"{letter_text}, {score}, {letter_color, shape_color}",
+                        f"{letter_detections[0].names[let_id]}, {score_let}, {letter_color, shape_color}",
                         (int(x1 + xl1 + 20), int(y1 + yl1 + 20)), font, 4,
                         (255, 255, 255), 2, cv2.LINE_AA)
                     cv2.rectangle(
