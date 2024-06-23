@@ -145,3 +145,25 @@ def read_color_on_shape(letter_crop):
             current_lower_area = area
 
     return shape_color, letter_color
+
+def find_letters_numbers(detection_model, frame_of_interest, frame_copy, x1, x2, y1, y2):
+    for detection in detection_model[0].boxes.data.tolist():   
+        print(f"AHHHH LOOK AT ME")
+        x1_model, y1_model, x2_model, y2_model, score, id = detection
+        text = detection_model[0].names[id]
+        # read letters or numbers and colors
+        shape_color, letter_color = read_color_on_shape(
+            frame_of_interest)
+        if id is not None:
+            print(f"FOUND TEXT {text}")
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(
+                frame_copy,
+                f"{detection_model[0].names[id]}, {score}, {letter_color, shape_color}",
+                (int(x1 + x1_model + 20), int(y1 + y1_model + 20)), font, 4,
+                (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.rectangle(
+                frame_copy,
+                (max(0, int(x1_model + x1)), max(0, int(y1_model + y1))),
+                (min(int(x2_model + x2), W), min(int(y2_model + y2), H)),
+                (0, 255, 0), 2)
