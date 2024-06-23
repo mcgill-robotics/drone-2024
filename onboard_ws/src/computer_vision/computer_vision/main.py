@@ -15,6 +15,7 @@ results = {}
 # load models
 man_shape_model = YOLO('runs/detect/train6/weights/best.pt')
 letter_detection_model = YOLO('runs/detect/train7/weights/best.pt')
+number_detection_model = YOLO('runs/detect/train/weights/best.pt')
 
 # load video
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
@@ -87,30 +88,20 @@ while True:
         letter_detections = letter_detection_model(frame_of_interest)
         num_detects_letter = len(letter_detections[0].boxes.data.tolist())
 
+        number_detections = number_detection_model(frame_of_interest)
+        num_detects_nums = len(number_detections[0].boxes.data.tolist())
+
         axs[int(index // num_columns)][int(index % num_columns)].imshow(
             cv2.cvtColor(frame_of_interest, cv2.COLOR_BGR2RGB))
-        for detection in letter_detections[0].boxes.data.tolist():
-            print(f"AHHHH LOOK AT ME")
-            xl1, yl1, xl2, yl2, score_let, let_id = detection
-            letter_text = letter_detections[0].names[let_id]
-            # assign letter to shape
-            if class_id != 3:  # it is a shape
-                # read letters and colors
-                shape_color, letter_color = read_color_on_shape(
-                    frame_of_interest)
-                if let_id is not None:
-                    print(f"FOUND TEXT {letter_text}")
-                    font = cv2.FONT_HERSHEY_SIMPLEX
-                    cv2.putText(
-                        frame_copy,
-                        f"{letter_detections[0].names[let_id]}, {score_let}, {letter_color, shape_color}",
-                        (int(x1 + xl1 + 20), int(y1 + yl1 + 20)), font, 4,
-                        (255, 255, 255), 2, cv2.LINE_AA)
-                    cv2.rectangle(
-                        frame_copy,
-                        (max(0, int(xl1 + x1)), max(0, int(yl1 + y1))),
-                        (min(int(xl2 + x2), W), min(int(yl2 + y2), H)),
-                        (0, 255, 0), 2)
+
+        #for letters
+        find_letters_numbers(letter_detections, frame_of_interest, 
+            frame_copy, x1, x2, y1, y2)
+
+        #for numbers
+        find_letters_numbers(number_detections, frame_of_interest, 
+            frame_copy, x1, x2, y1, y2)
+    
     for index in range(last_index + 1, num_rows * num_columns):
         axs[int(index // num_columns)][int(index % num_columns)].cla()
     plt.pause(0.0001)
