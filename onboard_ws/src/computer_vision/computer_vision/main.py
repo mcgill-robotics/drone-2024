@@ -5,7 +5,7 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from util import read_letter_and_color_on_shape
+from util import read_color_on_shape
 import matplotlib.pyplot as plt
 
 plt.ion()
@@ -82,6 +82,8 @@ while True:
                       (min(int(x2), W), min(int(y2), H)), (0, 255, 0), 2)
 
         frame_of_interest = frame[int(y1):int(y2), int(x1):int(x2)].copy()
+        if (class_id == 3):
+            continue
         letter_detections = letter_detection_model(frame_of_interest)
         num_detects_letter = len(letter_detections[0].boxes.data.tolist())
 
@@ -90,6 +92,7 @@ while True:
         for detection in letter_detections[0].boxes.data.tolist():
             print(f"AHHHH LOOK AT ME")
             xl1, yl1, xl2, yl2, score_let, let_id = detection
+            letter_text = letter_detections[0].names[let_id]
             # assign letter to shape
             if class_id != 3:  # it is a shape
                 # read letters and colors
