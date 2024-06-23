@@ -14,7 +14,7 @@ results = {}
 
 # load models
 man_shape_model = YOLO('runs/detect/train6/weights/best.pt')
-letter_detection_model = YOLO('runs/detect/train10/weights/best.pt')
+letter_detection_model = YOLO('runs/detect/train7/weights/best.pt')
 
 # load video
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
