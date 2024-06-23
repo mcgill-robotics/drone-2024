@@ -1,35 +1,13 @@
 import string
-import easyocr
 import cv2
 import numpy as np
 
-# Initialize the OCR reader
-reader = easyocr.Reader(['en'], gpu=True)  #change to true when on jetson
 
-
-def read_letter_and_color_on_shape(letter_crop):
-    """
-    Read the letter text from the given cropped image.
-
-    Args:
-        letter_crop (PIL.Image.Image): Cropped image containing the letter.
-
-    Returns:
-        tuple: Tuple containing the formatted text and its confidence score.
-    """
+def read_color_on_shape(letter_crop):
     # process object
-    grayImage_letter = cv2.cvtColor(letter_crop, cv2.COLOR_BGR2GRAY)
-    thresh_im_letter = cv2.adaptiveThreshold(grayImage_letter, 255,
-                                             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                             cv2.THRESH_BINARY, 11, 2)
     hsv_img = cv2.cvtColor(letter_crop, cv2.COLOR_BGR2HSV)
 
     colors = {}
-
-    detections = reader.readtext(thresh_im_letter)
-    if (len(detections) == 0):
-        return None, None, None, None
-    bbox, text, score = detections[0]
 
     # red boundaries
     red_lower1 = np.array([0, 100, 20])
@@ -166,4 +144,4 @@ def read_letter_and_color_on_shape(letter_crop):
             letter_color = color
             current_lower_area = area
 
-    return text, score, shape_color, letter_color
+    return shape_color, letter_color
