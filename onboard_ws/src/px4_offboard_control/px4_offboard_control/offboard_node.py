@@ -165,7 +165,7 @@ class OffboardControl(Node):
             self.popleft_action_callback)
 
         # publishers timing
-        timer_period = 0.05
+        timer_period = 0.1
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
         self.action_queue: Deque[OffboardControl.Action] = collections.deque(
