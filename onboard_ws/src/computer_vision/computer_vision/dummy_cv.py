@@ -10,7 +10,8 @@ from std_msgs.msg import String
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from util import get_shape, read_letter_and_color_on_shape
+from .utils.cv_util import read_color_on_shape
+from .utils.loc_util import get_n_e_d_from_pixel
 import os
 
 
@@ -79,32 +80,11 @@ class MinimalPublisher(Node):
         frameRate = int(self.cap.get(cv2.CAP_PROP_FPS))
         print(f"w, h, fr: {frameWidth}, {frameHeight}, {frameRate}")
 
-    @staticmethod
-    def quat_conjugate(q):
-        quat = np.array([q[0], *(-np.array(q[1:]))])
-        return quat / np.linalg.norm(quat)
-
-    def quat_apply(self, v):
-
-        def quat_mult(q1, q2):
-            a = q1[0]
-            u = np.array(q1[1:])
-            b = q2[0]
-            v = np.array(q2[1:])
-            left = a * b - np.dot(u, v)
-            right = a * v + b * u + np.cross(u, v)
-            return [left, *right]
-
-        v_quat = [0, *v]
-        q_cong = self.quat_conjugate(self.q)
-        tmp = quat_mult(v_quat, q_cong)
-        tmp = quat_mult(self.q, tmp)
-        return tmp[1:]
-
     def find_target_position_in_curr_frame(self):
         # TODO: CV CODE, LOOK FOR self.curr_target in the next few frames (or just next frame)
         # If not in the frame, return None, if is in the frame(s), return its position
         x, y, z = self.vehicle_info.x, self.vehicle_info.y, self.vehicle_info.z
+        heading = self.vehicle_info.heading
 
         target_type = self.curr_target.target_type
         ret, frame = self.cap.read()
@@ -118,6 +98,7 @@ class MinimalPublisher(Node):
 
         for detection in man_shape_detections[0].boxes.data.tolist():
             x1, y1, x2, y2, score, class_id = detection
+            x_center, y_center = (x1 + x2) / 2, (y1 + y2) / 2
             detected_target_type = Target.TARGET_TYPE_EMERGENT if class_id == 3 else Target.TARGET_TYPE_STANDARD
             # look if any detections have our target
             if (target_type != detected_target_type):
@@ -125,8 +106,12 @@ class MinimalPublisher(Node):
             else:
                 if detected_target_type == Target.TARGET_TYPE_EMERGENT:
                     # PERSON WE ARE LOOKING FOR !!!!!
+                    # TODO: MAKE SURE X AND Y ARE LOGICAL AND NOT REVERSED (OpenCV has them reversed in storage)
+                    # TODO: Define self.nx, self.ny, self.sensor_side, self.focal_length
                     msg = Point32()
-                    msg.x, msg.y, msg.z = get_n_e_d_from_pix()
+                    msg.x, msg.y, msg.z = get_n_e_d_from_pixel(
+                        x, y, z, heading, x_center, y_center, self.nx, self.ny,
+                        self.sensor_side, self.focal_length)
                     return msg
                 else:
                     detected_shape = Target.SHAPE_CIRCLE if class_id == 0 else \
@@ -180,7 +165,6 @@ class MinimalPublisher(Node):
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.vehicle_info = msg
-        self.q = msg.q
 
 
 def main(args=None):
