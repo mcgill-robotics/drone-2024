@@ -95,13 +95,13 @@ while True:
             cv2.cvtColor(frame_of_interest, cv2.COLOR_BGR2RGB))
 
         #for letters
-        find_letters_numbers(letter_detections, frame_of_interest, 
-            frame_copy, x1, x2, y1, y2)
+        find_letters_numbers(letter_detections, frame_of_interest, frame_copy,
+                             x1, x2, y1, y2)
 
         #for numbers
-        find_letters_numbers(number_detections, frame_of_interest, 
-            frame_copy, x1, x2, y1, y2)
-    
+        find_letters_numbers(number_detections, frame_of_interest, frame_copy,
+                             x1, x2, y1, y2)
+
     for index in range(last_index + 1, num_rows * num_columns):
         axs[int(index // num_columns)][int(index % num_columns)].cla()
     plt.pause(0.0001)
