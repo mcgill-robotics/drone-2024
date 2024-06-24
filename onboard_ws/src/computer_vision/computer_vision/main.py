@@ -5,7 +5,7 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from util import read_color_on_shape
+from .utils.cv_util import read_color_on_shape
 import matplotlib.pyplot as plt
 
 plt.ion()
