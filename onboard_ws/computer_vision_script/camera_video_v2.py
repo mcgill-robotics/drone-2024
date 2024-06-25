@@ -1,9 +1,8 @@
 import cv2
 import time
 
-#index of camera device which is 0 with one camera & DOESNT WORK WITHOUT SECOND PART
 camera = cv2.VideoCapture(
-   "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1920,height=1080,framerate=60/1 ! nvvidconv ! video/x-raw, format=I420 ! queue ! appsink",
+   "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1920,height=1080, framerate=60/1 ! nvvidconv ! appsink",
    cv2.CAP_GSTREAMER)
 
 if (camera.isOpened()):
@@ -18,18 +17,6 @@ frameHeight = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
 frameRate = int(camera.get(cv2.CAP_PROP_FPS))
 print(f"w, h, fr: {frameWidth}, {frameHeight}, {frameRate}")
 
-# for .avi files use DIVX, XVID
-# for .mp4 files use MJPG
-# fourccCode = cv2.VideoWriter_fourcc(*'DIVX')
-
-# videoFileName = './recordedVideo.avi'  #put whtvr video file name is
-#
-# videoDimension = (frameWidth, frameHeight)  # defines dimensions of video
-#
-# recordedVideo = cv2.VideoWriter(
-#    videoFileName, fourccCode, frameRate,
-#    videoDimension)  # creates a Video Writer object
-
 while True:
    # captures the frame
    success, frame = camera.read()
@@ -38,6 +25,7 @@ while True:
       print('Not able to read the frame. End')
       break
 
+   frame = cv2.resize(frame, (1280, 720))
    cv2.imshow('Camera video', frame)  # display camera image
 
    # recordedVideo.write(frame)  # saving frames to the file frame
