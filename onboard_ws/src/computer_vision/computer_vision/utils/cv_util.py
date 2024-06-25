@@ -124,8 +124,7 @@ def read_color_on_shape(letter_crop):
                                            cv2.CHAIN_APPROX_SIMPLE)
     for pic, contour in enumerate(contours):
         area = cv2.contourArea(contour)
-        if (area > 10):  #this is just me trying to see if it exists
-            colors[area] = ['orange']
+        colors[area] = ['orange']
 
     shape_color = None
     letter_color = None

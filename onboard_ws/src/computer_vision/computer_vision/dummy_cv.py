@@ -129,10 +129,10 @@ class MinimalPublisher(Node):
                     detected_shape = Target.SHAPE_CIRCLE if class_id == 0 else \
                     Target.SHAPE_CROSS if class_id == 1 else \
                     Target.SHAPE_PENTAGON if class_id == 2 else \
-                    Target.SHAPE_QUARTER_CIRCLE if class_id == 4 else \
-                    Target.SHAPE_RECTANGLE if class_id == 5 else \
-                    Target.SHAPE_SEMI_CIRCLE if class_id == 6 else \
-                    Target.SHAPE_STAR if class_id == 7 else \
+                    Target.SHAPE_QUARTER_CIRCLE if class_id == 3 else \
+                    Target.SHAPE_RECTANGLE if class_id == 4 else \
+                    Target.SHAPE_SEMI_CIRCLE if class_id == 5 else \
+                    Target.SHAPE_STAR if class_id == 6 else \
                     Target.SHAPE_TRIANGLE
                     target_shape = self.curr_target.shape  ## The shape variable is actually a number that represents the shape
                     if (detected_shape != target_shape):

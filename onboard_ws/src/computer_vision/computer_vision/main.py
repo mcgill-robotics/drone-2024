@@ -72,8 +72,6 @@ while True:
                       (min(int(x2), W), min(int(y2), H)), (0, 255, 0), 2)
 
         frame_of_interest = frame[int(y1):int(y2), int(x1):int(x2)]
-        if (class_id == 3):
-            continue
         letter_detections = letter_detection_model(frame_of_interest)
         num_detects_letter = len(letter_detections[0].boxes.data.tolist())
 
