@@ -48,13 +48,16 @@ class MinimalPublisher(Node):
 
         path = os.path.realpath(__file__)
         path = os.path.dirname(path)
-        pman = 'runs/detect/train5/weights/best.pt'
-        plet = 'runs/detect/train10/weights/best.pt'
+        pman = 'runs/detect/<MAN_MODEL>/weights/best.pt'
+        plet = 'runs/detect/<LET_MODEL>/weights/best.pt'
+        pnum = 'runs/detect/<NUM_MODEL>/weights/best.pt'
         path_man_shape = os.path.join(path, pman)
         path_letter = os.path.join(path, plet)
+        path_num = os.path.join(path, pnum)
 
         self.man_shape_model = YOLO(path_man_shape)
         self.letter_model = YOLO(path_letter)
+        self.number_model = YOLO(path_num)
 
         self.cap = cv2.VideoCapture(
             "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1920,height=1080,framerate=60/1 ! nvvidconv ! appsink",
@@ -65,6 +68,7 @@ class MinimalPublisher(Node):
         else:
             print("Could not open the camera")
             exit()
+
         sensor_diagonal = 7.9 * 1e-3  # in m
         self.sensor_side = sensor_diagonal / (2**(1 / 2))
         self.focal_length = 16 * 1e-3  # in m
@@ -80,23 +84,13 @@ class MinimalPublisher(Node):
         self.timer = self.create_timer(timer_period2, self.publish_image)
 
     def publish_image(self):
-        if self.cap.isOpened():
+        if self.cap.isOpened() and self.curr_target is None:
             ret, frame = self.cap.read()
             if (not ret):
                 print("Unable to get camera frame")
                 return
 
-            # # processes image data and converts to ros 2 message
-            # msg = Image()
-            # msg.header.stamp = Node.get_clock(self).now().to_msg()
-            # msg.header.frame_id = 'ANI717'
-            # msg.height = self.ny
-            # msg.width = self.nx
-            # msg.encoding = "bgr8"
-            # msg.is_bigendian = False
-            # msg.step = np.shape(frame)[2] * self.nx
-            # msg.data = np.array(frame).tobytes()
-
+            frame = cv2.resize(frame, (1280, 720))
             # publishes message
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             self.image_publisher.publish(

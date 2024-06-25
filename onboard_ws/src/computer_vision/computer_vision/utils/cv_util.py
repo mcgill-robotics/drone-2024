@@ -146,24 +146,47 @@ def read_color_on_shape(letter_crop):
 
     return shape_color, letter_color
 
-def find_letters_numbers(detection_model, frame_of_interest, frame_copy, x1, x2, y1, y2):
-    for detection in detection_model[0].boxes.data.tolist():   
-        print(f"AHHHH LOOK AT ME")
-        x1_model, y1_model, x2_model, y2_model, score, id = detection
-        text = detection_model[0].names[id]
-        # read letters or numbers and colors
-        shape_color, letter_color = read_color_on_shape(
-            frame_of_interest)
-        if id is not None:
-            print(f"FOUND TEXT {text}")
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(
-                frame_copy,
-                f"{detection_model[0].names[id]}, {score}, {letter_color, shape_color}",
-                (int(x1 + x1_model + 20), int(y1 + y1_model + 20)), font, 4,
-                (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.rectangle(
-                frame_copy,
-                (max(0, int(x1_model + x1)), max(0, int(y1_model + y1))),
-                (min(int(x2_model + x2), W), min(int(y2_model + y2), H)),
-                (0, 255, 0), 2)
+
+def find_alphanum(detection, detections_object, frame_of_interest, frame_copy,
+                  x1, x2, y1, y2):
+    print(f"AHHHH LOOK AT ME")
+    W, H, _ = frame_copy.shape
+    x1_model, y1_model, x2_model, y2_model, score, id = detection
+    text = detections_object[0].names[id]
+    # read letters or numbers and colors
+    shape_color, letter_color = read_color_on_shape(frame_of_interest)
+    print(
+        f"FOUND TEXT {text}, shape color {shape_color}, letter color {letter_color}"
+    )
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text = f"{text}, {score}, {letter_color, shape_color}"
+    draw_text(frame_copy,
+              text,
+              pos=(int(x1 - 22), int(y1 - 22)),
+              font_scale=1,
+              text_color=(0, 255, 0))
+    cv2.rectangle(frame_copy,
+                  (max(0, int(x1_model + x1)), max(0, int(y1_model + y1))),
+                  (min(int(x2_model + x1), W), min(int(y2_model + y1), H)),
+                  (0, 255, 0), 2)
+
+
+def draw_text(img,
+              text,
+              font=cv2.FONT_HERSHEY_PLAIN,
+              pos=(0, 0),
+              font_scale=3,
+              font_thickness=2,
+              text_color=(0, 255, 0),
+              text_color_bg=(0, 0, 0)):
+
+    pos = int(pos[0]), int(pos[1])
+    x, y = pos
+    text_size, _ = cv2.getTextSize(text, font, font_scale, font_thickness)
+    text_w, text_h = text_size
+    cv2.rectangle(img, pos, (int(x + text_w), int(y + text_h)), text_color_bg,
+                  -1)
+    cv2.putText(img, text, (int(x), int(y + text_h + font_scale - 1)), font,
+                font_scale, text_color, font_thickness)
+
+    return text_size
