@@ -2,7 +2,7 @@ import cv2
 import time
 
 camera = cv2.VideoCapture(
-   "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1920,height=1080, framerate=60/1 ! nvvidconv ! appsink",
+   "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1920,height=1080, framerate=10/1 ! nvvidconv ! appsink",
    cv2.CAP_GSTREAMER)
 
 if (camera.isOpened()):
