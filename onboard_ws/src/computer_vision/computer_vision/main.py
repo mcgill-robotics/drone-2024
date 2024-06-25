@@ -13,7 +13,7 @@ plt.ion()
 results = {}
 
 # load models
-man_shape_model = YOLO('./runs/detect/new_shape_model/weights/best.pt')
+man_shape_model = YOLO('./runs/detect/train2/weights/best.pt')
 letter_detection_model = YOLO('runs/detect/letters_yolo/weights/best.pt')
 number_detection_model = YOLO('runs/detect/numbers_yolo/weights/best.pt')
 
