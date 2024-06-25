@@ -1,8 +1,10 @@
 import rclpy
+from cv_bridge import CvBridge
 from rclpy.node import Node
 from custom_msgs.msg import Target
 from custom_msgs.msg import VehicleInfo
 from geometry_msgs.msg import Point32
+from sensor_msgs.msg import Image
 
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 from std_msgs.msg import String
@@ -43,6 +45,7 @@ class MinimalPublisher(Node):
 
         timer_period = 0.5
         self.timer_1 = self.create_timer(timer_period, self.cv_tick)
+
         path = os.path.realpath(__file__)
         path = os.path.dirname(path)
         pman = 'runs/detect/train5/weights/best.pt'
@@ -53,36 +56,53 @@ class MinimalPublisher(Node):
         self.man_shape_model = YOLO(path_man_shape)
         self.letter_model = YOLO(path_letter)
 
-        self.cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
-        if not self.cap.isOpened():
-            print("Can't open camera")
-            exit()
+        self.cap = cv2.VideoCapture(
+            "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1920,height=1080,framerate=60/1 ! nvvidconv ! appsink",
+            cv2.CAP_GSTREAMER)
 
-        width = int(640 * 3.6)
-        height = int(480 * 3.6)
-        fr = 5
-        ok = self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        if (not ok):
-            print("Could not change image width")
+        if (self.cap.isOpened()):
+            print("The camera is successfully opened")
+        else:
+            print("Could not open the camera")
             exit()
-        ok = self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        if (not ok):
-            print("Could not change image height")
-            exit()
-        #
-        ok = self.cap.set(cv2.CAP_PROP_FPS, fr)
-        if (not ok):
-            print("Could not change camera frame rate")
-            exit()
-
-        frameWidth = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frameHeight = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        sensor_diagonal = 7.9 * 1e-3  # in m
+        self.sensor_side = sensor_diagonal / (2**(1 / 2))
+        self.focal_length = 16 * 1e-3  # in m
+        self.nx = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.ny = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         frameRate = int(self.cap.get(cv2.CAP_PROP_FPS))
-        print(f"w, h, fr: {frameWidth}, {frameHeight}, {frameRate}")
+        print(f"w, h, fr: {self.nx}, {self.ny}, {frameRate}")
+
+        # Camera feed
+        self.image_publisher = self.create_publisher(Image, "/video_feed", 10)
+        self.bridge = CvBridge()
+        timer_period2 = 0.1
+        self.timer = self.create_timer(timer_period2, self.publish_image)
+
+    def publish_image(self):
+        if self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if (not ret):
+                print("Unable to get camera frame")
+                return
+
+            # # processes image data and converts to ros 2 message
+            # msg = Image()
+            # msg.header.stamp = Node.get_clock(self).now().to_msg()
+            # msg.header.frame_id = 'ANI717'
+            # msg.height = self.ny
+            # msg.width = self.nx
+            # msg.encoding = "bgr8"
+            # msg.is_bigendian = False
+            # msg.step = np.shape(frame)[2] * self.nx
+            # msg.data = np.array(frame).tobytes()
+
+            # publishes message
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            self.image_publisher.publish(
+                self.bridge.cv2_to_imgmsg(frame, encoding="passthrough"))
 
     def find_target_position_in_curr_frame(self):
-        # TODO: CV CODE, LOOK FOR self.curr_target in the next few frames (or just next frame)
-        # If not in the frame, return None, if is in the frame(s), return its position
         x, y, z = self.vehicle_info.x, self.vehicle_info.y, self.vehicle_info.z
         heading = self.vehicle_info.heading
 
@@ -105,9 +125,7 @@ class MinimalPublisher(Node):
                 continue
             else:
                 if detected_target_type == Target.TARGET_TYPE_EMERGENT:
-                    # PERSON WE ARE LOOKING FOR !!!!!
                     # TODO: MAKE SURE X AND Y ARE LOGICAL AND NOT REVERSED (OpenCV has them reversed in storage)
-                    # TODO: Define self.nx, self.ny, self.sensor_side, self.focal_length
                     msg = Point32()
                     msg.x, msg.y, msg.z = get_n_e_d_from_pixel(
                         x, y, z, heading, x_center, y_center, self.nx, self.ny,
