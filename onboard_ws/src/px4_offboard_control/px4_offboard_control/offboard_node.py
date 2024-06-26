@@ -17,6 +17,7 @@ from custom_msgs.srv import RequestAction
 from custom_msgs.srv import SendAction
 from custom_msgs.msg import Action
 from custom_msgs.msg import VehicleInfo
+from std_msgs.msg import Float32
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 from rclpy.clock import Clock
 from rclpy.node import Node
@@ -164,6 +165,10 @@ class OffboardControl(Node):
             RequestAction, '/px4_action_queue/popleft_action',
             self.popleft_action_callback)
 
+        self.voltage_sub = self.create_subscription(Float32, "battery_voltage",
+                                                    self.voltage_callback)
+        self.voltage = 0.0
+
         # publishers timing
         timer_period = 0.1
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -195,6 +200,7 @@ class OffboardControl(Node):
         string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
         string += f"angular_velocity: ({info.angular_velocity[0]:.4f}, {info.angular_velocity[1]:.4f}, {info.angular_velocity[2]:.4f})\n"
         string += f"power level: {info.powerlevel:.2f}%\t"
+        String += f"voltage: {self.voltage:.2f}V\t"
         mode_string = "Armed" if info.arming_state == VehicleInfo.ARMING_STATE_ARMED else "Disarmed"
         string += f"arming state: {info.arming_state}, {mode_string}\n"
         string += f"current action: {info.current_action}\n"
@@ -365,6 +371,9 @@ class OffboardControl(Node):
 
     def vehicle_odom_callback(self, msg: VehicleOdometry):
         self.vehicle_odom = msg
+
+    def voltage_callback(self, info: Float32):
+        self.voltage = info.data
 
     def enqueue_action_callback(self, req, res):
         action = OffboardControl.Action.construct_action(
