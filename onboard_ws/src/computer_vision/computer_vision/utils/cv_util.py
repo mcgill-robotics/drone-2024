@@ -3,171 +3,123 @@ import cv2
 import numpy as np
 
 
-def read_color_on_shape(letter_crop):
+def generate_mask(img,
+                  hue_ranges,
+                  saturation_range,
+                  value_range,
+                  additional_mask=None):
+    """
+        img is an HSV image
+        hue_ranges is an iterable of tuples with lower and upper degrees for
+            hue.(one smaller than the other)
+        saturation_range is a tuple of lower and upper saturation percentages.
+        value_range is a tuple of lower and upper value percentages.
+    """
+
+    def hue_to_cv(hue_deg):
+        return hue_deg * 180 / 360
+
+    def sat_val_to_cv(sat_val_perc):
+        return sat_val_perc * 255 / 100
+
+    mask = None
+    lower_sat, upper_sat = saturation_range
+    lower_sat, upper_sat = sat_val_to_cv(lower_sat), sat_val_to_cv(upper_sat)
+    lower_val, upper_val = value_range
+    lower_val, upper_val = sat_val_to_cv(lower_val), sat_val_to_cv(upper_val)
+    for lower_hue, upper_hue in hue_ranges:
+        lower_hue, upper_hue = hue_to_cv(lower_hue), hue_to_cv(upper_hue)
+        lower = np.array([lower_hue, lower_sat, lower_val])
+        upper = np.array([upper_hue, upper_sat, upper_val])
+        new_mask = cv2.inRange(img, lower, upper)
+        if mask is None:
+            mask = new_mask
+        else:
+            mask = cv2.bitwise_or(mask, new_mask)
+    if (additional_mask is not None):
+        mask = cv2.bitwise_and(mask, additional_mask)
+    return mask
+
+
+def get_color_dict(hsv_img, additional_mask=None):
+    colors = {
+        'red': 0.,
+        'green': 0.,
+        'blue': 0.,
+        'white': 0.,
+        'black': 0.,
+        'purple': 0.,
+        'brown': 0.,
+        'orange': 0.
+    }
+
+    red_mask = generate_mask(hsv_img, [(0, 12), (332, 360)], (30, 100),
+                             (30, 100), additional_mask)
+
+    green_mask = generate_mask(hsv_img, [(70, 150)], (30, 100), (30, 100),
+                               additional_mask)
+
+    blue_mask = generate_mask(hsv_img, [(150, 248)], (30, 100), (30, 100),
+                              additional_mask)
+
+    white_mask = generate_mask(hsv_img, [(0, 360)], (0, 30), (40, 100),
+                               additional_mask)
+
+    black_mask = generate_mask(hsv_img, [(0, 360)], (0, 100), (0, 30),
+                               additional_mask)
+
+    purple_mask = generate_mask(hsv_img, [(248, 332)], (30, 100), (30, 100),
+                                additional_mask)
+
+    brown_mask = generate_mask(hsv_img, [(0, 70), (332, 360)], (30, 100),
+                               (30, 70), additional_mask)
+
+    orange_mask = generate_mask(hsv_img, [(12, 70)], (30, 100), (70, 100),
+                                additional_mask)
+
+    colors['red'] = np.sum(red_mask)
+    colors['green'] = np.sum(green_mask)
+    colors['blue'] = np.sum(blue_mask)
+    colors['white'] = np.sum(white_mask)
+    colors['black'] = np.sum(black_mask)
+    colors['purple'] = np.sum(purple_mask)
+    colors['brown'] = np.sum(brown_mask)
+    colors['orange'] = np.sum(orange_mask)
+
+    return colors
+
+
+def read_color_on_shape(shape_crop, letter_x1, letter_y1, letter_x2,
+                        letter_y2):
     # process object
-    hsv_img = cv2.cvtColor(letter_crop, cv2.COLOR_BGR2HSV)
+    hsv_img = cv2.cvtColor(shape_crop, cv2.COLOR_BGR2HSV)
+    grey_img = cv2.cvtColor(shape_crop, cv2.COLOR_BGR2GRAY)
+    contours, _ = cv2.findContours(grey_img.copy(), cv2.RETR_EXTERNAL,
+                                   cv2.CHAIN_APPROX_SIMPLE)
 
-    colors = {}
+    contour_mask = np.zeros(hsv_img.shape[:2], np.uint8)
+    cv2.drawContours(contour_mask, contours, -1, (255), cv2.FILLED)
+    cv2.imshow("Contour", contour_mask)
+    cv2.waitKey(0)
 
-    # red boundaries
-    red_lower1 = np.array([0, 100, 20])
-    red_upper1 = np.array([10, 255, 255])
-    red_lower2 = np.array([160, 100, 20])
-    red_upper2 = np.array([179, 255, 255])
-    red_lower_mask = cv2.inRange(hsv_img, red_lower1, red_upper1)
-    red_upper_mask = cv2.inRange(hsv_img, red_lower2, red_upper2)
-    red_mask = red_lower_mask + red_upper_mask
+    colors_shape = get_color_dict(hsv_img, contour_mask)
+    keymax = sorted(zip(colors_shape.values(), colors_shape.keys()),
+                    key=lambda x: x[0])
+    shape_color = keymax[-1][1]
 
-    # green boundaries
-    green_lower = np.array([36, 50, 70], np.uint8)
-    green_upper = np.array([89, 255, 255], np.uint8)
-    green_mask = cv2.inRange(hsv_img, green_lower, green_upper)
+    letter_hsv = hsv_img[int(letter_y1):int(letter_y2),
+                         int(letter_x1):int(letter_x2)]
 
-    # blue boundaries
-    blue_lower = np.array([90, 50, 70], np.uint8)
-    blue_upper = np.array([128, 255, 255], np.uint8)
-    blue_mask = cv2.inRange(hsv_img, blue_lower, blue_upper)
-
-    # white boundaries
-    white_lower = np.array([0, 0, 231], np.uint8)
-    white_upper = np.array([180, 18, 255], np.uint8)
-    white_mask = cv2.inRange(hsv_img, white_lower, white_upper)
-
-    # black boundaries
-    black_lower = np.array([0, 0, 0], np.uint8)
-    black_upper = np.array([180, 255, 30], np.uint8)
-    black_mask = cv2.inRange(hsv_img, black_lower, black_upper)
-
-    # purple boundaries
-    purple_lower = np.array([129, 50, 70], np.uint8)
-    purple_upper = np.array([158, 255, 255], np.uint8)
-    purple_mask = cv2.inRange(hsv_img, purple_lower, purple_upper)
-
-    # brown boundaries
-    brown_lower = np.array([10, 100, 20], np.uint8)
-    brown_upper = np.array([20, 255, 200], np.uint8)
-    brown_mask = cv2.inRange(hsv_img, brown_lower, brown_upper)
-
-    # orange boundaries
-    orange_lower = np.array([10, 50, 70], np.uint8)
-    orange_upper = np.array([24, 255, 255], np.uint8)
-    orange_mask = cv2.inRange(hsv_img, orange_lower, orange_upper)
-
-    # For red color
-    res_red = cv2.bitwise_and(hsv_img, hsv_img, mask=red_mask)
-    # For green color
-    res_green = cv2.bitwise_and(hsv_img, hsv_img, mask=green_mask)
-    # For blue color
-    res_blue = cv2.bitwise_and(hsv_img, hsv_img, mask=blue_mask)
-    # For white color
-    res_white = cv2.bitwise_and(hsv_img, hsv_img, mask=white_mask)
-    # For black color
-    res_black = cv2.bitwise_and(hsv_img, hsv_img, mask=black_mask)
-    # For purple color
-    res_purple = cv2.bitwise_and(hsv_img, hsv_img, mask=purple_mask)
-    # For brown color
-    res_brown = cv2.bitwise_and(hsv_img, hsv_img, mask=brown_mask)
-    # For orange color
-    res_orange = cv2.bitwise_and(hsv_img, hsv_img, mask=orange_mask)
-
-    # creating contour to track red color
-    contours, hierarchy = cv2.findContours(red_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['red']
-
-    # Creating contour to track green color
-    contours, hierarchy = cv2.findContours(green_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['green']
-
-    # Creating contour to track blue color
-    contours, hierarchy = cv2.findContours(blue_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['blue']
-
-    # creating contour to track white color
-    contours, hierarchy = cv2.findContours(white_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['white']
-
-    # Creating contour to track black color
-    contours, hierarchy = cv2.findContours(black_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['black']
-
-    # Creating contour to track purple color
-    contours, hierarchy = cv2.findContours(purple_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['purple']
-
-    # creating contour to track brown color
-    contours, hierarchy = cv2.findContours(brown_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['brown']
-
-    # Creating contour to track orange color
-    contours, hierarchy = cv2.findContours(orange_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for pic, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        colors[area] = ['orange']
-
-    shape_color = None
+    color_letter = get_color_dict(letter_hsv)
+    keymax = sorted(zip(color_letter.values(), color_letter.keys()),
+                    key=lambda x: x[0])
+    first_letter_color, second_letter_color = keymax[-1][1], keymax[-2][1]
     letter_color = None
-    current_upper_area = 0
-    current_lower_area = 0
-    for area, color in enumerate(colors):
-        if shape_color == None and letter_color == None:
-            shape_color = color
-            letter_color = color
-            current_upper_area = area
-            current_lower_area = area
-        elif area > current_upper_area:
-            shape_color = color
-            current_upper_area = area
-        elif area < current_lower_area:
-            letter_color = color
-            current_lower_area = area
-
+    if (shape_color == first_letter_color):
+        letter_color = second_letter_color
+    else:
+        letter_color = first_letter_color
     return shape_color, letter_color
-
-
-def find_alphanum(detection, detections_object, frame_of_interest, frame_copy,
-                  x1, x2, y1, y2):
-    print(f"AHHHH LOOK AT ME")
-    W, H, _ = frame_copy.shape
-    x1_model, y1_model, x2_model, y2_model, score, id = detection
-    text = detections_object[0].names[id]
-    # read letters or numbers and colors
-    shape_color, letter_color = read_color_on_shape(frame_of_interest)
-    print(
-        f"FOUND TEXT {text}, shape color {shape_color}, letter color {letter_color}"
-    )
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    text = f"{text}, {score}, {letter_color, shape_color}"
-    draw_text(frame_copy,
-              text,
-              pos=(int(x1 - 22), int(y1 - 22)),
-              font_scale=1,
-              text_color=(0, 255, 0))
-    cv2.rectangle(frame_copy,
-                  (max(0, int(x1_model + x1)), max(0, int(y1_model + y1))),
-                  (min(int(x2_model + x1), W), min(int(y2_model + y1), H)),
-                  (0, 255, 0), 2)
 
 
 def draw_text(img,
@@ -179,8 +131,9 @@ def draw_text(img,
               text_color=(0, 255, 0),
               text_color_bg=(0, 0, 0)):
 
-    pos = int(pos[0]), int(pos[1])
     x, y = pos
+    x, y = int(x), int(y)
+    pos = (x, y)
     text_size, _ = cv2.getTextSize(text, font, font_scale, font_thickness)
     text_w, text_h = text_size
     cv2.rectangle(img, pos, (int(x + text_w), int(y + text_h)), text_color_bg,
@@ -189,3 +142,34 @@ def draw_text(img,
                 font_scale, text_color, font_thickness)
 
     return text_size
+
+
+def find_alphanum(detection, detections_object, frame_of_interest, frame_copy,
+                  x1, x2, y1, y2):
+    W, H, _ = frame_copy.shape
+    x1_model, y1_model, x2_model, y2_model, score, id = detection
+    text = detections_object[0].names[id]
+    # read letters or numbers and colors
+    shape_color, letter_color = read_color_on_shape(frame_of_interest,
+                                                    x1_model, y1_model,
+                                                    x2_model, y2_model)
+    print(
+        f"FOUND TEXT {text}, shape color {shape_color}, letter color {letter_color}"
+    )
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text = f"{text}, {score*100:0.2f}%, {letter_color, shape_color}"
+    draw_text(frame_copy,
+              text,
+              pos=(int(x1 - 22), int(y1 - 22)),
+              font_scale=1,
+              text_color=(0, 255, 0))
+    cv2.rectangle(frame_copy,
+                  (max(0, int(x1_model + x1)), max(0, int(y1_model + y1))),
+                  (min(int(x2_model + x1), W), min(int(y2_model + y1), H)),
+                  (0, 255, 0), 2)
+    return shape_color, letter_color, text
+
+
+def rect_text_img(img, text, x1, y1, x2, y2, color=(255, 255, 255)):
+    draw_text(img, text, pos=(x1, y1 - 30), text_color=color)
+    cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)

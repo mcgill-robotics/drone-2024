@@ -53,4 +53,4 @@ def get_world_vec(cam_vec, n, e, d, heading):
 
     trans = np.array([[*u, 0], [*v, 0], [*w, 0], [*eye, 1]])
     trans = trans.T
-    return np.matmul(trans, homogeneous_cam_vec)
+    return np.matmul(trans, homogeneous_cam_vec)[0:3]

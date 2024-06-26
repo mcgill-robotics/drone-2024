@@ -13,7 +13,7 @@ plt.ion()
 results = {}
 
 # load models
-man_shape_model = YOLO('./runs/detect/train2/weights/best.pt')
+man_shape_model = YOLO('./runs/detect/new_new_shape_model/weights/best.pt')
 letter_detection_model = YOLO('runs/detect/letters_yolo/weights/best.pt')
 number_detection_model = YOLO('runs/detect/numbers_yolo/weights/best.pt')
 
@@ -62,7 +62,7 @@ while True:
             f"Detected {man_shape_detections[0].names[class_id]}, at x: {(x1 + x2) / 2}, y: {(y1 + y2) / 2}"
         )
         font = cv2.FONT_HERSHEY_SIMPLEX
-        text = f"{man_shape_detections[0].names[class_id]}, {score}"
+        text = f"{man_shape_detections[0].names[class_id]}, {score*100:.2f}%"
         draw_text(frame_copy,
                   text,
                   pos=(x1, y1),
