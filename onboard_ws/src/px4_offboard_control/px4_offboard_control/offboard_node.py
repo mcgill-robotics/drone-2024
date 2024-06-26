@@ -1,193 +1,209 @@
 #!/usr/bin/env python
 
-__autor__="Imad Issafras"
-__contact__="imad.issafras@outlook.com"
-
-# ROS imports
-import rclpy
-from rclpy.node import Node
-from rclpy.clock import Clock
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
-
-# ROS msgs and srvs types
-from custom_msgs.msg import VehicleInfo
-from custom_msgs.msg import Action
-from custom_msgs.srv import SendAction
-from custom_msgs.srv import RequestAction
-from std_msgs.msg import Float32
-
-# Other imports 
-import collections
+import numpy as np
 from typing import Deque
-from enum import Enum
-from mavsdk import System
-from mavsdk.offboard import PositionNedYaw
-import asyncio
+import collections
+from px4_msgs.msg import VehicleCommand
+from px4_msgs.msg import GotoSetpoint
+from px4_msgs.msg import TrajectorySetpoint
+from px4_msgs.msg import OffboardControlMode
+from px4_msgs.msg import VehicleCommandAck
+from px4_msgs.msg import BatteryStatus
+from px4_msgs.msg import VehicleStatus
+from px4_msgs.msg import VehicleLocalPosition
+from px4_msgs.msg import VehicleAttitude
+from px4_msgs.msg import VehicleOdometry
+from custom_msgs.srv import RequestAction
+from custom_msgs.srv import SendAction
+from custom_msgs.msg import Action
+from custom_msgs.msg import VehicleInfo
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
+from rclpy.clock import Clock
+from rclpy.node import Node
+import rclpy
+
+__autor__ = "Imad Issafras"
+__contact__ = "imad.issafras@outlook.com"
+
 import os
-import time
+
 
 class OffboardControl(Node):
+
     class Action:
-        TAKE_OFF_ID = 1
-        WAYPOINT_ID = 2
-        LANDING_ID = 3
-        TRANSITION_QC_ID = 4
-        TRANSITION_FW_ID = 5
-    
-        def __init__(self, des : str, action_type : int) -> None:
+
+        def __init__(self, des: str, action_type: int, action: Action) -> None:
             self.description = des
             self.action_type = action_type
+            self.action_obj: Action = action
 
-        def perform(self, offboard_object : "OffboardControl"):
+        def perform(self, offboard_object: "OffboardControl"):
             pass
-        
+
         @staticmethod
-        def construct_action(action_type, x = None, y = None, z = None) -> "OffboardControl.Action":
-            if (action_type == OffboardControl.Action.TAKE_OFF_ID):
-                return OffboardControl.TakeOff()
-            elif (action_type == OffboardControl.Action.WAYPOINT_ID):
-                return OffboardControl.Waypoint(x, y, z)
-            elif (action_type == OffboardControl.Action.LANDING_ID):
-                return OffboardControl.Landing()
-            elif (action_type == OffboardControl.Action.TRANSITION_QC_ID):
-                return OffboardControl.TransitionQC()
-            elif (action_type == OffboardControl.Action.TRANSITION_FW_ID):
-                return OffboardControl.TransitionFW()
+        def construct_action(action_type,
+                             x=None,
+                             y=None,
+                             z=None,
+                             yaw=None,
+                             max_speed_h=None,
+                             action=None) -> "OffboardControl.Action":
+            if (action_type == Action.ACTION_TAKE_OFF):
+                return OffboardControl.TakeOff(action)
+            elif (action_type == Action.ACTION_WAYPOINT):
+                return OffboardControl.Waypoint(x, y, z, yaw, max_speed_h,
+                                                action)
+            elif (action_type == Action.ACTION_LAND):
+                return OffboardControl.Landing(action)
             else:
-                print(f"[WARNING] {action_type} is not a valid action type id") 
-    
+                print(f"[WARNING] {action_type} is not a valid action type id")
+
     class TakeOff(Action):
-        def __init__(self):
-            super().__init__("Take off", OffboardControl.Action.TAKE_OFF_ID)
+
+        def __init__(self, action: Action):
+            super().__init__("Take off", Action.ACTION_TAKE_OFF, action)
             self.setup_done = False
-        
-        def perform(self, offboard_object : "OffboardControl"):
+
+        def perform(self, offboard_object: "OffboardControl"):
             offboard_object.takeoff(self)
-            
+
     class Waypoint(Action):
-        def __init__(self, x, y, z) -> None:
-            super().__init__(f"Waypoint to ({x}, {y}, {z})", OffboardControl.Action.WAYPOINT_ID)
+
+        def __init__(self, x, y, z, yaw, max_speed_h, action: Action) -> None:
+            super().__init__(f"Waypoint to ({x}, {y}, {z})",
+                             Action.ACTION_WAYPOINT, action)
             self.x = x
             self.y = y
             self.z = z
+            self.yaw = yaw
+            self.max_speed_h = max_speed_h
 
-        def perform(self, offboard_object : "OffboardControl"):
-            offboard_object.waypoint(self.x, self.y, self.z)
+        def perform(self, offboard_object: "OffboardControl"):
+            offboard_object.waypoint(self.x, self.y, self.z, self.yaw,
+                                     self.max_speed_h)
 
     class Landing(Action):
-        def __init__(self):
-            super().__init__("Landing", OffboardControl.Action.LANDING_ID)
 
-        def perform(self, offboard_object : "OffboardControl"):
+        def __init__(self, action: Action):
+            super().__init__("Landing", Action.ACTION_LAND, action)
+
+        def perform(self, offboard_object: "OffboardControl"):
             offboard_object.land()
 
-    class FlightConfiguration(Enum):
-        QUAD_COPTER_CONFIGURATION = 1
-        FIXED_WING_CONFIGURATION = 2
-
-        def other(self)->"OffboardControl.FlightConfiguration":
-            return OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION if \
-                self == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION else \
-                      OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION
-
-        def get_vtol_status(self):
-            if (self == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-                return VtolVehicleStatus.VEHICLE_VTOL_STATE_MC
-            return VtolVehicleStatus.VEHICLE_VTOL_STATE_FW
-        
-        def get_tolerance(self):
-            if (self == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-                return 3.
-            if (self == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
-                return 7.
-            
-    class TransitionQC(Action):
-        def __init__(self):
-            super().__init__("Transition to Quad Copter", OffboardControl.Action.TRANSITION_QC_ID)
-
-        def perform(self, offboard_object : "OffboardControl"):
-            offboard_object.transition(OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION)
-
-    class TransitionFW(Action):
-        def __init__(self):
-            super().__init__("Transition to Fixed wing", OffboardControl.Action.TRANSITION_FW_ID)
-
-        def perform(self, offboard_object : "OffboardControl"):
-            offboard_object.transition(OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION)
-
-    def exec_until_completion(self, coroutine):
-        return self.loop.run_until_complete(coroutine)
-
-    def __init__(self, loop):
+    def __init__(self):
         super().__init__('px4_controller')
 
         qos_profile = QoSProfile(
-            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.
+            RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+            durability=QoSDurabilityPolicy.
+            RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
-            depth=1
-        )
+            depth=1)
 
-        # Used to synchify async activities in mavsdk
-        self.loop = loop 
-        ## MAV SDK
-        self.drone = System()
-        self.exec_until_completion(self.drone.connect())
+        # PX4 pubs / subs
+        # PX4 SUBS
+        self.vehicle_status_sub = self.create_subscription(
+            VehicleStatus,
+            '/fmu/out/vehicle_status',
+            self.vehicle_status_callback,
+            qos_profile=qos_profile)
+        self.vehicle_status: VehicleStatus | None = None
+
+        self.vehicle_local_position_sub = self.create_subscription(
+            VehicleLocalPosition,
+            '/fmu/out/vehicle_local_position',
+            self.vehicle_local_position_callback,
+            qos_profile=qos_profile)
+        self.vehicle_local_position: VehicleLocalPosition | None = None
+
+        self.vehicle_battery_status_sub = self.create_subscription(
+            BatteryStatus,
+            '/fmu/out/battery_status',
+            self.vehicle_battery_status_callback,
+            qos_profile=qos_profile)
+        self.vehicle_battery_status: BatteryStatus | None = None
+
+        self.vehicle_command_ack_sub = self.create_subscription(
+            VehicleCommandAck, '/fmu/out/vehicle_command_ack',
+            self.vehicle_command_ack_callback, qos_profile)
+        self.vehicle_command_ack: VehicleCommandAck | None = None
+
+        self.vehicle_attitude_sub = self.create_subscription(
+            VehicleAttitude, '/fmu/out/vehicle_attitude',
+            self.vehicle_attitude_callback, qos_profile)
+        self.vehicle_attitude: VehicleAttitude | None = None
+
+        self.vehicle_odom_sub = self.create_subscription(
+            VehicleOdometry, '/fmu/out/vehicle_odometry',
+            self.vehicle_odom_callback, qos_profile)
+        self.vehicle_odom: VehicleOdometry | None = None
+
+        # PX4 PUBS
+        self.offboard_mode_pub = self.create_publisher(
+            OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
+
+        self.goto_setpoint_pub = self.create_publisher(
+            GotoSetpoint, '/fmu/in/goto_setpoint', qos_profile)
+
+        self.trajectory_setpoint_pub = self.create_publisher(
+            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile)
+
+        self.vehicle_command_pub = self.create_publisher(
+            VehicleCommand, '/fmu/in/vehicle_command', qos_profile)
 
         # custom pubs / subs
         self.vehicle_info_pub = self.create_publisher(
-            VehicleInfo, '/px4_monitoring/vehicle_info', qos_profile
-        )
+            VehicleInfo, '/px4_monitoring/vehicle_info', qos_profile)
 
         self.enqueue_action_service = self.create_service(
-            SendAction, '/px4_action_queue/append_action', self.enqueue_action_callback
-        )
+            SendAction, '/px4_action_queue/append_action',
+            self.enqueue_action_callback)
 
         self.pop_action_service = self.create_service(
-            RequestAction, '/px4_action_queue/popright_action', self.popright_action_callback
-        )
+            RequestAction, '/px4_action_queue/popleft_action',
+            self.popleft_action_callback)
 
-        #SOC setup
-        self.voltage_sub = self.create_subscription(
-            Float32, "battery_voltage", self.voltage_callback
-        )
-        self.current_sub = self.create_subscription(
-            Float32, "battery_current", self.current_callback
-        )
-        self.voltage = 0.0
-        self.current = 0.0
-        self.battery_capacity = 16000.0
-        self.soc = 100.0
-        self.charge_accumulated = 0.0
-        self.previous_time = time.time()
-        
         # publishers timing
         timer_period = 0.1
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
-        self.action_queue : Deque[OffboardControl.Action] = collections.deque([])
+        self.action_queue: Deque[OffboardControl.Action] = collections.deque(
+            [])
 
         timer_period_actions = 0.2
-        self.timer_action = self.create_timer(timer_period_actions, self.action_executor)
-        self.current_flight_configuration = OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION
-        self._transition_toggle = True
+        self.timer_action = self.create_timer(timer_period_actions,
+                                              self.action_executor)
 
-    
-    def print_vehicle_info(self, info : VehicleInfo):
+    def offboard_mode_publish(self):
+        offboard_msg = OffboardControlMode()
+        offboard_msg.timestamp = int(Clock().now().nanoseconds / 1000)
+        offboard_msg.position = True
+        offboard_msg.velocity = True
+        offboard_msg.acceleration = False
+        self.offboard_mode_pub.publish(offboard_msg)
+
+    def print_vehicle_info(self, info: VehicleInfo):
         dash_length = os.get_terminal_size()[0]
         string = "\n" + ('-' * dash_length) + "\n"
+        string += f"Time: {info.stamp}\n"
         string += f"(N, E, D): ({info.x:.4f}, {info.y:.4f}, {info.z:.4f})\n"
         string += f"(VN, VE, VD): ({info.vx:.4f}, {info.vy:.4f}, {info.vz:.4f})\n"
-        string += f"power level: {self.soc:.2f}%\t voltage: {self.voltage:.2f}V\t"
-        mode_string = "FW" if info.mode == VehicleStatus.VEHICLE_TYPE_FIXED_WING else \
-                        "QC" if info.mode == VehicleStatus.VEHICLE_TYPE_ROTARY_WING else "OTHER"
-        string += f"mode: {info.mode}, {mode_string}\n"
+        string += f"(AN, AE, AD): ({info.ax:.4f}, {info.ay:.4f}, {info.az:.4f})\n"
+        string += f"heading: {info.heading}\n"
+        string += f"(ref_lat, ref_lon, ref_alt): ({info.ref_lat:.4f}, {info.ref_lon:.4f}, {info.ref_alt:.4f})\n"
+        string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
+        string += f"angular_velocity: ({info.angular_velocity[0]:.4f}, {info.angular_velocity[1]:.4f}, {info.angular_velocity[2]:.4f})\n"
+        string += f"power level: {info.powerlevel:.2f}%\t"
+        mode_string = "Armed" if info.arming_state == VehicleInfo.ARMING_STATE_ARMED else "Disarmed"
+        string += f"arming state: {info.arming_state}, {mode_string}\n"
         string += f"current action: {info.current_action}\n"
         string += '-' * dash_length
         self.get_logger().info(string)
 
     def vehicle_info_publish(self):
         vehicle_info = VehicleInfo()
+        vehicle_info.stamp = self.get_clock().now().to_msg()
 
         # position and velocity
         if (self.vehicle_local_position is not None):
@@ -198,153 +214,189 @@ class OffboardControl(Node):
             vehicle_info.vx = self.vehicle_local_position.vx
             vehicle_info.vy = self.vehicle_local_position.vy
             vehicle_info.vz = self.vehicle_local_position.vz
-        # mode 
+
+            vehicle_info.ax = self.vehicle_local_position.ax
+            vehicle_info.ay = self.vehicle_local_position.ay
+            vehicle_info.az = self.vehicle_local_position.az
+
+            vehicle_info.ref_lat = self.vehicle_local_position.ref_lat
+            vehicle_info.ref_lon = self.vehicle_local_position.ref_lon
+            vehicle_info.ref_alt = self.vehicle_local_position.ref_alt
+
+            vehicle_info.heading = self.vehicle_local_position.heading
+
+        # Attitude
+        if (self.vehicle_attitude is not None):
+            vehicle_info.q = self.vehicle_attitude.q
+        if (self.vehicle_odom is not None):
+            vehicle_info.angular_velocity = self.vehicle_odom.angular_velocity
+        # mode
         if (self.vehicle_status is not None):
-            vehicle_info.mode = self.vehicle_status.vehicle_type
+            vehicle_info.arming_state = self.vehicle_status.arming_state
         # power
         if (self.vehicle_battery_status is not None):
-            vehicle_info.powerlevel = self.vehicle_battery_status.remaining * 100 
+            vehicle_info.powerlevel = self.vehicle_battery_status.remaining * 100
         # actions
         if (len(self.action_queue) == 0):
             vehicle_info.current_action = "No action to be done"
+            vehicle_info.curr_action_obj = Action()
         else:
             vehicle_info.current_action = self.action_queue[0].description
+            vehicle_info.curr_action_obj = self.action_queue[0].action_obj
 
         self.print_vehicle_info(vehicle_info)
 
         self.vehicle_info_pub.publish(vehicle_info)
 
+    def timer_callback(self):
+        self.offboard_mode_publish()
+        self.vehicle_info_publish()
+
+    def send_vehicle_command(self,
+                             cmd,
+                             param1=None,
+                             param2=None,
+                             param3=None,
+                             param4=None,
+                             param5=None,
+                             param6=None,
+                             param7=None):
+        vehicle_command = VehicleCommand()
+        vehicle_command.command = cmd  # command ID
+
+        for i in range(1, 8):
+            parameter_input = vars()[f"param{i}"]
+            if parameter_input is not None:
+                vehicle_command.__setattr__(f"param{i}", parameter_input)
+
+        vehicle_command.target_system = 1  # system which should execute the command
+        # component which should execute the command, 0 for all components
+        vehicle_command.target_component = 1
+        vehicle_command.source_system = 1  # system sending the command
+        vehicle_command.source_component = 1  # component sending the command
+        vehicle_command.from_external = True
+        vehicle_command.timestamp = int(Clock().now().nanoseconds /
+                                        1000)  # time in microseconds
+
+        self.vehicle_command_pub.publish(vehicle_command)
+
     def action_executor(self):
-        if (len(self.action_queue) == 0): 
-            self.exec_until_completion(self.drone.offboard.stop())
-        else:
-            if (not self.exec_until_completion(self.drone.offboard.is_active())):
-                self.exec_until_completion(self.drone.offboard.set_position_ned(PositionNedYaw(-self.vehicle_local_position.x,
-                                                                                                   -self.vehicle_local_position.y,
-                                                                                                   -self.vehicle_local_position.z,
-                                                                                                   -self.vehicle_local_position.heading)))
-                self.exec_until_completion(self.drone.offboard.start())
+        if (len(self.action_queue) > 0):
             self.action_queue[0].perform(self)
 
-    def takeoff(self, action_ob:TakeOff):
+    def takeoff(self, action_ob: TakeOff):
         """
             Takeoff action, only completes when within 0.1 m of the target height
         """
-        if (not action_ob.setup_done):
-            # Setup 
-            ## ARM
-            self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1., 6.)
-            self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=float(VehicleCommand.ARMING_ACTION_ARM))
-            action_ob.setup_done = True
 
-        # set wapoint to be up high
-        target_height = -10.
-        
+        target_height = -5.
         trajectorySetpoint = GotoSetpoint()
         trajectorySetpoint.position = [0.0, 0.0, target_height]
         self.goto_setpoint_pub.publish(trajectorySetpoint)
 
-        if (abs(self.vehicle_local_position.z - target_height) <= 0.1): 
-            self.action_queue.popleft()
-        
-    def current_tolerance(self):
-        """
-            defines the distance tolerances for Quad Copter and fixed wing configuartion
-        """
-        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-            return 3.
-        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
-            return 7.
+        if (not action_ob.setup_done):
+            # Setup
+            # ARM
+            self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
+                                      1., 6.)
+            self.send_vehicle_command(
+                VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                param1=float(VehicleCommand.ARMING_ACTION_ARM))
+            action_ob.setup_done = True
 
-    def waypoint(self, x, y, z, yaw = 0.0):
+        # set wapoint to be up high
+
+        trajectorySetpoint = GotoSetpoint()
+        trajectorySetpoint.position = [
+            self.vehicle_local_position.x, self.vehicle_local_position.y,
+            target_height
+        ]
+        self.goto_setpoint_pub.publish(trajectorySetpoint)
+
+        if (abs(self.vehicle_local_position.z - target_height) <= 0.3):
+            self.action_queue.popleft()
+
+    def waypoint(self, x, y, z, yaw, max_speed_h):
         """
             Waypoint action, only completes when within current_tolarance from the target waypoint
         """
-        if (self.current_flight_configuration == OffboardControl.FlightConfiguration.QUAD_COPTER_CONFIGURATION):
-            trajectorySetpoint = GotoSetpoint()
-            trajectorySetpoint.position = [x, y, z]
-            self.goto_setpoint_pub.publish(trajectorySetpoint)
+        trajectorySetpoint = TrajectorySetpoint()
+        trajectorySetpoint.position = [np.NAN, np.NAN, z]
+        trajectorySetpoint.yaw = yaw
+        dx, dy = x - self.vehicle_local_position.x, y - self.vehicle_local_position.y
+        if (dx**2 + dy**2)**(1 / 2) >= max_speed_h:
+            angle = np.arctan2(dy, dx)
+            vy = max_speed_h * np.sin(angle)
+            vx = max_speed_h * np.cos(angle)
+            vz = np.NAN
+            trajectorySetpoint.velocity = [vx, vy, vz]
         else:
-            self.exec_until_completion(self.drone.offboard.set_position_ned(PositionNedYaw(x, y, z, yaw)))
-        if (((self.vehicle_local_position.x - x) ** (2) +
-             (self.vehicle_local_position.y - y) ** (2) +
-             (self.vehicle_local_position.z - z) ** (2)) ** (1/2) <= self.current_flight_configuration.get_tolerance()):
-            self.action_queue.popleft()
+            trajectorySetpoint.position = [x, y, z]
+        self.trajectory_setpoint_pub.publish(trajectorySetpoint)
 
     def land(self):
         """
             Landing Action, only completes when drone is disarmed
         """
-        if (self.vehicle_command_ack.command != VehicleCommand.VEHICLE_CMD_NAV_LAND or 
-                self.vehicle_command_ack.result != VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED):
+        if (self.vehicle_command_ack is None
+                or self.vehicle_command_ack.command
+                != VehicleCommand.VEHICLE_CMD_NAV_LAND
+                or self.vehicle_command_ack.result
+                != VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED):
             self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
-        if (self.vehicle_status.arming_state == VehicleStatus.ARMING_STATE_DISARMED):
+        if (self.vehicle_status.arming_state ==
+                VehicleStatus.ARMING_STATE_DISARMED):
             self.action_queue.popleft()
 
-    def transition(self, mode : FlightConfiguration):
-        """
-            Transition action, completes when the current flight mode is the same as the desired flight mode
-        """
-        if (mode == self.current_flight_configuration):
-            self.action_queue.popleft()
-            return
-        
-        self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION, float(mode.get_vtol_status()))
-        
-        if (mode == OffboardControl.FlightConfiguration.FIXED_WING_CONFIGURATION):
-            throtle_percentage = 0.80
-            self.send_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_CHANGE_SPEED, 1., -1., throtle_percentage)
+    def vehicle_status_callback(self, msg: VehicleStatus):
+        self.vehicle_status = msg
 
-        self.current_flight_configuration = mode
+    def vehicle_local_position_callback(self, msg: VehicleLocalPosition):
+        self.vehicle_local_position = msg
 
-    
+    def vehicle_battery_status_callback(self, msg: BatteryStatus):
+        self.vehicle_battery_status = msg
+
+    def vehicle_command_ack_callback(self, msg: VehicleCommandAck):
+        self.vehicle_command_ack = msg
+
+    def vehicle_attitude_callback(self, msg: VehicleAttitude):
+        self.vehicle_attitude = msg
+
+    def vehicle_odom_callback(self, msg: VehicleOdometry):
+        self.vehicle_odom = msg
+
     def enqueue_action_callback(self, req, res):
-        action = OffboardControl.Action.construct_action(req.action.action, req.action.x, req.action.y, req.action.z)
+        action = OffboardControl.Action.construct_action(
+            req.action.action, req.action.x, req.action.y, req.action.z,
+            req.action.yaw, req.action.max_speed_h, req.action)
         self.action_queue.append(action)
         res.success = True
         return res
-    
-    def popright_action_callback(self, req, res):
+
+    def popleft_action_callback(self, req, res):
         if (len(self.action_queue) == 0):
             res.action.action = Action.ACTION_NONE
             return res
-        action : OffboardControl.Action = self.action_queue.pop()
+        action: OffboardControl.Action = self.action_queue.popleft()
         res.action.action = action.action_type
         res.action.x = action.x
         res.action.y = action.y
         res.action.z = action.z
+        res.action.yaw = action.yaw
+        res.action.max_speed_h = action.max_speed_h
         return res
-    
-    def voltage_callback(self, msg):
-        self.voltage = msg.data
-        self.update_soc()
-        
-    def current_callback(self, msg):
-        self.current = msg.data
-        self.update_soc()
 
-    def update_soc(self):
-        current_time = time.time()
-        time_elapsed = (current_time - self.previous_time) / 3600.0
-        self.previous_time = current_time
-
-        if self.current <= 0.0:
-            return
-        charge_lost = self.current * time_elapsed
-        self.charge_accumulated += charge_lost
-        self.soc = 100.0 - (self.charge_accumulated / self.battery_capacity) * 100.0
-        self.soc = max(0.0, min(100.0, self.soc))
 
 def main(args=None):
 
     rclpy.init(args=args)
-    loop = asyncio.get_event_loop()
-    offboard_control = OffboardControl(loop)
+    offboard_control = OffboardControl()
     rclpy.spin(offboard_control)
 
-    loop.close()
     offboard_control.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
