@@ -17,14 +17,14 @@
 	,
 "lap":
 	[
-		{"latitude": 38.315387, "longitude": -76.542386, "altitude": 25.0},
-		{"latitude": 38.317360, "longitude": -76.544749, "altitude": 25.0},
-		{"latitude": 38.317760, "longitude": -76.551744, "altitude": 25.0},
-		{"latitude": 38.316454, "longitude": -76.554933, "altitude": 25.0},
-		{"latitude": 38.316782, "longitude": -76.549444, "altitude": 25.0},
-		{"latitude": 38.316583, "longitude": -76.546154, "altitude": 25.0},
-		{"latitude": 38.314077, "longitude": -76.542225, "altitude": 25.0},
-		{"latitude": 38.315678, "longitude": -76.552093, "altitude": 25.0}
+	{"latitude": 38.315387, "longitude": -76.542386, "altitude": 25.0},
+	{"latitude": 38.317360, "longitude": -76.544749, "altitude": 25.0},
+	{"latitude": 38.317760, "longitude": -76.551744, "altitude": 25.0},
+	{"latitude": 38.316454, "longitude": -76.554933, "altitude": 25.0},
+	{"latitude": 38.316782, "longitude": -76.549444, "altitude": 25.0},
+	{"latitude": 38.316583, "longitude": -76.546154, "altitude": 25.0},
+	{"latitude": 38.314077, "longitude": -76.542225, "altitude": 25.0},
+	{"latitude": 38.315678, "longitude": -76.552093, "altitude": 25.0}
 	],
 "survey_area": [
 	{"latitude": 38.31442311312976,"longitude": -76.54522971451763},
@@ -35,9 +35,6 @@
 	],
 "targets" : [
 	{"target_type": 1, "target_hub": 32, "shape": 3, "shape_color": 2, "alpha_num": "B", "alpha_num_color": 8},
-	{"target_type": 1, "target_hub": 48, "shape": 1, "shape_color": 4, "alpha_num": "2", "alpha_num_color": 7},
-	{"target_type": 1, "target_hub": 70, "shape": 1, "shape_color": 4, "alpha_num": "2", "alpha_num_color": 7},
-	{"target_type": 1, "target_hub": 42, "shape": 1, "shape_color": 4, "alpha_num": "2", "alpha_num_color": 7},
-	{"target_type": 1, "target_hub": 2, "shape": 1, "shape_color": 4, "alpha_num": "2", "alpha_num_color": 7}
+	{"target_type": 1, "target_hub": 48, "shape": 1, "shape_color": 4, "alpha_num": "2", "alpha_num_color": 7}
 	]
 }
