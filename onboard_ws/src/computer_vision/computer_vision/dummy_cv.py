@@ -77,6 +77,13 @@ class MinimalPublisher(Node):
         frameRate = int(self.cap.get(cv2.CAP_PROP_FPS))
         print(f"w, h, fr: {self.nx}, {self.ny}, {frameRate}")
 
+        # manual position
+        # x is pxpercentage of the nx, y is py percentage of the ny of current frame
+        self.manual_position_sub = self.create_subscription(
+            Point32, "/manual_detection", self.manual_position_callback,
+            self.qos_profile)
+        self.manual_position = None
+
         # Camera feed
         self.image_publisher = self.create_publisher(Image, "/video_feed", 10)
         self.bridge = CvBridge()
@@ -247,7 +254,19 @@ class MinimalPublisher(Node):
         ## So here target is not None, aka a valid target
         target_position: Point32 | None = self.find_target_position_in_curr_frame(
         )
+        if (self.manual_position is not None
+                and self.vehicle_info is not None):
+            pix_perc, piy_perc = self.manual_position.x, self.manual_position.y
+            x, y, z = self.vehicle_info.x, self.vehicle_info.y, self.vehicle_info.z
+            heading = self.vehicle_info.heading
+            target_position = get_n_e_d_from_pixel(x, y, z, heading,
+                                                   int(pix_perc * self.nx),
+                                                   int(piy_perc * self.ny),
+                                                   self.nx, self.ny,
+                                                   self.sensor_side,
+                                                   self.focal_length)
         if (target_position is not None):
+            self.manual_position = None
             self.curr_target = None
             self.target_position_publisher.publish(target_position)
 
@@ -256,6 +275,9 @@ class MinimalPublisher(Node):
 
     def vehicle_info_callback(self, msg: VehicleInfo):
         self.vehicle_info = msg
+
+    def manual_position_callback(self, msg: Point32):
+        self.manual_position = msg
 
 
 def main(args=None):
