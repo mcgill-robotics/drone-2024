@@ -38,7 +38,7 @@ class MinimalPublisher(Node):
             depth=1)
         path = os.path.realpath(__file__)
         path = os.path.dirname(path)
-        path = os.path.join(path, "../resource/big_field_mission.json")
+        path = os.path.join(path, "../resource/comp_boundary.json")
         with open(path, "r") as fp:
             self.json = json.load(fp)
         self.boundary_publisher = self.create_publisher(

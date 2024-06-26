@@ -166,7 +166,7 @@ class OffboardControl(Node):
             self.popleft_action_callback)
 
         self.voltage_sub = self.create_subscription(Float32, "battery_voltage",
-                                                    self.voltage_callback)
+                                                    self.voltage_callback, 10)
         self.voltage = 0.0
 
         # publishers timing
@@ -200,7 +200,7 @@ class OffboardControl(Node):
         string += f"q: ({info.q[0]:.4f}, {info.q[1]:.4f}, {info.q[2]:.4f}, {info.q[3]:.4f})\n"
         string += f"angular_velocity: ({info.angular_velocity[0]:.4f}, {info.angular_velocity[1]:.4f}, {info.angular_velocity[2]:.4f})\n"
         string += f"power level: {info.powerlevel:.2f}%\t"
-        String += f"voltage: {self.voltage:.2f}V\t"
+        string += f"voltage: {self.voltage:.2f}V\t"
         mode_string = "Armed" if info.arming_state == VehicleInfo.ARMING_STATE_ARMED else "Disarmed"
         string += f"arming state: {info.arming_state}, {mode_string}\n"
         string += f"current action: {info.current_action}\n"
