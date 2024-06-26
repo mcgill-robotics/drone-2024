@@ -1,11 +1,48 @@
 import cv2
 import numpy as np
+from ultralytics import YOLO
+import sys
 
 
-def read_color_on_shape(letter_crop):
-    # process object
-    hsv_img = cv2.cvtColor(letter_crop, cv2.COLOR_BGR2HSV)
+def generate_mask(img,
+                  hue_ranges,
+                  saturation_range,
+                  value_range,
+                  additional_mask=None):
+    """
+        img is an HSV image
+        hue_ranges is an iterable of tuples with lower and upper degrees for
+            hue.(one smaller than the other)
+        saturation_range is a tuple of lower and upper saturation percentages.
+        value_range is a tuple of lower and upper value percentages.
+    """
 
+    def hue_to_cv(hue_deg):
+        return hue_deg * 180 / 360
+
+    def sat_val_to_cv(sat_val_perc):
+        return sat_val_perc * 255 / 100
+
+    mask = None
+    lower_sat, upper_sat = saturation_range
+    lower_sat, upper_sat = sat_val_to_cv(lower_sat), sat_val_to_cv(upper_sat)
+    lower_val, upper_val = value_range
+    lower_val, upper_val = sat_val_to_cv(lower_val), sat_val_to_cv(upper_val)
+    for lower_hue, upper_hue in hue_ranges:
+        lower_hue, upper_hue = hue_to_cv(lower_hue), hue_to_cv(upper_hue)
+        lower = np.array([lower_hue, lower_sat, lower_val])
+        upper = np.array([upper_hue, upper_sat, upper_val])
+        new_mask = cv2.inRange(img, lower, upper)
+        if mask is None:
+            mask = new_mask
+        else:
+            mask = cv2.bitwise_or(mask, new_mask)
+    if (additional_mask is not None):
+        mask = cv2.bitwise_and(mask, additional_mask)
+    return mask
+
+
+def get_color_dict(hsv_img, additional_mask=None):
     colors = {
         'red': 0.,
         'green': 0.,
@@ -17,143 +54,85 @@ def read_color_on_shape(letter_crop):
         'orange': 0.
     }
 
-    # red boundaries
-    red_lower1 = np.array([0, 50, 50])
-    red_upper1 = np.array([5, 255, 255])
-    red_lower2 = np.array([174, 50, 50])
-    red_upper2 = np.array([179, 255, 255])
-    red_lower_mask = cv2.inRange(hsv_img, red_lower1, red_upper1)
-    red_upper_mask = cv2.inRange(hsv_img, red_lower2, red_upper2)
-    red_mask = red_lower_mask + red_upper_mask
+    red_mask = generate_mask(hsv_img, [(0, 12), (332, 360)], (30, 100),
+                             (30, 100), additional_mask)
 
-    # green boundaries
-    green_lower = np.array([51, 50, 50], np.uint8)
-    green_upper = np.array([71, 255, 255], np.uint8)
-    green_mask = cv2.inRange(hsv_img, green_lower, green_upper)
+    green_mask = generate_mask(hsv_img, [(70, 150)], (30, 100), (30, 100),
+                               additional_mask)
 
-    # blue boundaries
-    blue_lower = np.array([63, 50, 50], np.uint8)
-    blue_upper = np.array([90, 255, 255], np.uint8)
-    blue_mask = cv2.inRange(hsv_img, blue_lower, blue_upper)
+    blue_mask = generate_mask(hsv_img, [(150, 248)], (30, 100), (30, 100),
+                              additional_mask)
 
-    # white boundaries
-    white_lower = np.array([0, 0, 127], np.uint8)
-    white_upper = np.array([179, 20, 255], np.uint8)
-    white_mask = cv2.inRange(hsv_img, white_lower, white_upper)
+    white_mask = generate_mask(hsv_img, [(0, 360)], (0, 30), (40, 100),
+                               additional_mask)
 
-    # black boundaries
-    black_lower = np.array([0, 0, 0], np.uint8)
-    black_upper = np.array([179, 127, 127], np.uint8)
-    black_mask = cv2.inRange(hsv_img, black_lower, black_upper)
+    black_mask = generate_mask(hsv_img, [(0, 360)], (0, 100), (0, 30),
+                               additional_mask)
 
-    # purple boundaries
-    purple_lower = np.array([139, 50, 50], np.uint8)
-    purple_upper = np.array([153, 255, 255], np.uint8)
-    purple_mask = cv2.inRange(hsv_img, purple_lower, purple_upper)
+    purple_mask = generate_mask(hsv_img, [(248, 332)], (30, 100), (30, 100),
+                                additional_mask)
 
-    # brown boundaries
-    brown_lower = np.array([15, 105, 105], np.uint8)
-    brown_upper = np.array([40, 153, 153], np.uint8)
-    brown_mask = cv2.inRange(hsv_img, brown_lower, brown_upper)
-    # orange boundaries
-    orange_lower = np.array([15, 160, 160], np.uint8)
-    orange_upper = np.array([40, 255, 255], np.uint8)
-    orange_mask = cv2.inRange(hsv_img, orange_lower, orange_upper)
-    cv2.imshow("image", orange_mask)
-    cv2.waitKey(0)
+    brown_mask = generate_mask(hsv_img, [(0, 70), (332, 360)], (30, 100),
+                               (30, 70), additional_mask)
+
+    orange_mask = generate_mask(hsv_img, [(12, 70)], (30, 100), (70, 100),
+                                additional_mask)
 
     colors['red'] = np.sum(red_mask)
-    colors['green'] = np.sum(red_mask)
-    colors['blue'] = np.sum(red_mask)
-    colors['white'] = np.sum(red_mask)
-    colors['black'] = np.sum(red_mask)
-    colors['purple'] = np.sum(red_mask)
-    colors['brown'] = np.sum(red_mask)
-    # For red     # creating contour to track red color
-    # contours, hierarchy = cv2.findContours(red_mask, cv2.RETR_TREE,
-    #                                        cv2.CHAIN_APPROX_SIMPLE)
-    # for contour in contours:
-    #     area = cv2.contourArea(contour)
-    #     colors['red'] += area
-    #
-    # # Creating contour to track green color
-    # contours, hierarchy = cv2.findContours(green_mask, cv2.RETR_TREE,
-    #                                        cv2.CHAIN_APPROX_SIMPLE)
-    # for contour in (contours):
-    #     area = cv2.contourArea(contour)
-    #     colors['green'] += area
-    #
-    # # Creating contour to track blue color
-    # contours, hierarchy = cv2.findContours(blue_mask, cv2.RETR_TREE,
-    #                                        cv2.CHAIN_APPROX_SIMPLE)
-    # for contour in (contours):
-    #     area = cv2.contourArea(contour)
-    #     colors['blue'] += area
-    #
-    # # creating contour to track white color
-    # contours, hierarchy = cv2.findContours(white_mask, cv2.RETR_TREE,
-    #                                        cv2.CHAIN_APPROX_SIMPLE)
-    # for contour in (contours):
-    #     area = cv2.contourArea(contour)
-    #     colors['white'] += area
-    #
-    # # Creating contour to track black color
-    # contours, hierarchy = cv2.findContours(black_mask, cv2.RETR_TREE,
-    #                                        cv2.CHAIN_APPROX_SIMPLE)
-    # for contour in (contours):
-    #     area = cv2.contourArea(contour)
-    #     colors['black'] += area
-    #
-    # # Creating contour to track purple color
-    # contours, hierarchy = cv2.findContours(purple_mask, cv2.RETR_TREE,
-    #                                        cv2.CHAIN_APPROX_SIMPLE)
-    # for contour in (contours):
-    #     area = cv2.contourArea(contour)
-    #     colors['purple'] += area
-    #
-    # # creating contour to track brown color
-    # contours, hierarchy = cv2.findContours(brown_mask, cv2.RETR_TREE,
-    #                                        cv2.CHAIN_APPROX_SIMPLE)
-    # for contour in (contours):
-    #     area = cv2.contourArea(contour)
-    #     colors['brown'] += area
-    #
-    # cv2.drawContours(brown_mask, contours, -1, (0, 255, 0), 3)
-    # cv2.waitKey(0)
-    # Creating contour to track orange color
-    contours, hierarchy = cv2.findContours(orange_mask, cv2.RETR_TREE,
-                                           cv2.CHAIN_APPROX_SIMPLE)
-    for contour in (contours):
-        area = cv2.contourArea(contour)
-        colors['orange'] += area
+    colors['green'] = np.sum(green_mask)
+    colors['blue'] = np.sum(blue_mask)
+    colors['white'] = np.sum(white_mask)
+    colors['black'] = np.sum(black_mask)
+    colors['purple'] = np.sum(purple_mask)
+    colors['brown'] = np.sum(brown_mask)
+    colors['orange'] = np.sum(orange_mask)
 
-    shape_color = None
-    shape_color_area = -1
-    text_color = None
-    text_color_area = -1
-
-    for color, tot_area in (colors.items()):
-        if (shape_color_area < tot_area):
-            text_color_area = shape_color_area
-            text_color = shape_color
-
-            shape_color_area = tot_area
-            shape_color = color
-
-    print(colors)
-
-    return shape_color, text_color
+    return colors
 
 
-def main():
-    img = cv2.imread(
-        "/home/unhappysquid/drone_2024/onboard_ws/src/computer_vision/computer_vision/brown_circle.png",
-        cv2.IMREAD_COLOR)
-    print(read_color_on_shape(img))
-    cv2.imshow("image", img)
+def read_color_on_shape(shape_crop, letter_x1, letter_y1, letter_x2,
+                        letter_y2):
+    # process object
+    hsv_img = cv2.cvtColor(shape_crop, cv2.COLOR_BGR2HSV)
+    grey_img = cv2.cvtColor(shape_crop, cv2.COLOR_BGR2GRAY)
+    contours, _ = cv2.findContours(grey_img.copy(), cv2.RETR_EXTERNAL,
+                                   cv2.CHAIN_APPROX_SIMPLE)
 
+    contour_mask = np.zeros(hsv_img.shape[:2], np.uint8)
+    cv2.drawContours(contour_mask, contours, -1, (255), cv2.FILLED)
+    cv2.imshow("Contour", contour_mask)
     cv2.waitKey(0)
+
+    colors_shape = get_color_dict(hsv_img, contour_mask)
+    keymax = sorted(zip(colors_shape.values(), colors_shape.keys()),
+                    key=lambda x: x[0])
+    shape_color = keymax[-1][1]
+
+    letter_hsv = hsv_img[int(letter_y1):int(letter_y2),
+                         int(letter_x1):int(letter_x2)]
+
+    color_letter = get_color_dict(letter_hsv)
+    keymax = sorted(zip(color_letter.values(), color_letter.keys()),
+                    key=lambda x: x[0])
+    first_letter_color, second_letter_color = keymax[-1][1], keymax[-2][1]
+    letter_color = None
+    if (shape_color == first_letter_color):
+        letter_color = second_letter_color
+    else:
+        letter_color = first_letter_color
+    return shape_color, letter_color
+
+
+def main(path):
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    letter_detection_model = YOLO('runs/detect/letters_yolo/weights/best.pt')
+    letter_detections = letter_detection_model(img)[0].boxes.data.tolist()[0]
+    x1_model, y1_model, x2_model, y2_model, score, id = letter_detections
+    cv2.imshow("image", img)
+    cv2.waitKey(0)
+    print(read_color_on_shape(img, x1_model, y1_model, x2_model, y2_model))
 
 
 if __name__ == "__main__":
-    main()
+    path = sys.argv[1]
+    main(path)
