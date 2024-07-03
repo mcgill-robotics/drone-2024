@@ -1,0 +1,31 @@
+{
+"boundary": [	
+	{"latitude": 45.50479616276509, "longitude": -73.57960027701687},
+	{"latitude": 45.50463806559881, "longitude": -73.57928063081441},
+	{"latitude": 45.5046599263331, "longitude": -73.57907397163096},
+	{"latitude": 45.50489969495801, "longitude": -73.57881990593249},
+	{"latitude": 45.50519268504002, "longitude": -73.57884702826807},
+	{"latitude": 45.50557829166168, "longitude": -73.57893503176628},
+	{"latitude": 45.50555073900249, "longitude": -73.57950490694454},
+	{"latitude": 45.50533628990726, "longitude": -73.57961791307072},
+	{"latitude": 45.50503432713688, "longitude": -73.57965300778537},
+	{"latitude": 45.50479616276509, "longitude": -73.57960027701687}
+	]
+	,
+"lap":
+	[
+	{"latitude": 45.5054155380882, "longitude": -73.57901547352402, "altitude": 100.0},
+	{"latitude": 45.50529941083116, "longitude": -73.57949321496231, "altitude": 100.0},
+	{"latitude": 45.50497837721103, "longitude": -73.57900199767872, "altitude": 100.0}
+	],
+"survey_area": [
+		{"latitude": 45.50526253095961, "longitude": -73.57935094156947}, 
+		{"latitude": 45.50506857172602, "longitude": -73.57933340225861}, 
+		{"latitude": 45.50507804735606, "longitude": -73.5791578141411}, 
+		{"latitude": 45.50527619660913, "longitude": -73.57917949493769}, 
+		{"latitude": 45.50526253095961, "longitude": -73.57935094156947}
+	],
+"targets" : [
+	{"target_type": 1, "target_hub": 1, "shape": 3, "shape_color": 2, "alpha_num": "B", "alpha_num_color": 8}
+	]
+}

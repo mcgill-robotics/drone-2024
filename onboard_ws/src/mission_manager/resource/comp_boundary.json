@@ -1,0 +1,40 @@
+{
+"boundary": [	
+	{"latitude": 38.31729702009844, "longitude": -76.55617670782419},
+	{"latitude": 38.31594832826572, "longitude": -76.55657341657302},
+	{"latitude": 38.31546739500083, "longitude": -76.55376201277696},
+	{"latitude": 38.31470980862425, "longitude": -76.54936361414539},
+	{"latitude": 38.31424154692598, "longitude": -76.54662761646904},
+	{"latitude": 38.31369801280048, "longitude": -76.54342380058223},
+	{"latitude": 38.31331079191371, "longitude": -76.54109648475954},
+	{"latitude": 38.31529941346197, "longitude": -76.54052104837133},
+	{"latitude": 38.31587643291039, "longitude": -76.54361305817427},
+	{"latitude": 38.31861642463319, "longitude": -76.54538594175376},
+	{"latitude": 38.31862683616554, "longitude": -76.55206138505936},
+	{"latitude": 38.31703471119464, "longitude": -76.55244787859773},
+	{"latitude": 38.31674255749409, "longitude": -76.55294546866578}
+	]
+	,
+"lap":
+	[
+	{"latitude": 38.315387, "longitude": -76.542386, "altitude": 25.0},
+	{"latitude": 38.317360, "longitude": -76.544749, "altitude": 25.0},
+	{"latitude": 38.317760, "longitude": -76.551744, "altitude": 25.0},
+	{"latitude": 38.316454, "longitude": -76.554933, "altitude": 25.0},
+	{"latitude": 38.316782, "longitude": -76.549444, "altitude": 25.0},
+	{"latitude": 38.316583, "longitude": -76.546154, "altitude": 25.0},
+	{"latitude": 38.314077, "longitude": -76.542225, "altitude": 25.0},
+	{"latitude": 38.315678, "longitude": -76.552093, "altitude": 25.0}
+	],
+"survey_area": [
+	{"latitude": 38.31442311312976,"longitude": -76.54522971451763},
+	{"latitude": 38.31421041772561,"longitude": -76.54400246436776},
+	{"latitude": 38.31440703962630,"longitude": -76.54394394383165},
+	{"latitude": 38.31461622313521,"longitude": -76.54516993186949},
+	{"latitude": 38.31442311312976,"longitude": -76.54522971451763}
+	],
+"targets" : [
+	{"target_type": 1, "target_hub": 32, "shape": 3, "shape_color": 2, "alpha_num": "B", "alpha_num_color": 8},
+	{"target_type": 1, "target_hub": 48, "shape": 1, "shape_color": 4, "alpha_num": "2", "alpha_num_color": 7}
+	]
+}
